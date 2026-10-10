@@ -1,0 +1,32 @@
+{
+  "name": "progress",
+  "version": "1.0.0",
+  "description": "Visible progress for Claude Code's long plans: a band above the prompt, a /progress panel and milestone rows, on desktop, terminal and mobile",
+  "author": {
+    "name": "Álvaro del Pozo",
+    "url": "https://www.linkedin.com/in/alvaro-hiexperience/"
+  },
+  "homepage": "https://github.com/alvaro-hi/claude-progress",
+  "repository": "https://github.com/alvaro-hi/claude-progress",
+  "license": "MIT",
+  "keywords": [
+    "progress",
+    "plans",
+    "subagents",
+    "mod"
+  ],
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the progress band, panel and milestones: auto follows the system locale (LANG), en = English, es = Spanish",
+      "options": [
+        "auto",
+        "en",
+        "es"
+      ],
+      "default": "auto"
+    }
+  },
+  "types": "./types/index.d.ts"
+}

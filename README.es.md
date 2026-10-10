@@ -1,0 +1,96 @@
+# claude-progress
+
+[English](README.md) · **Español**
+
+Ve por dónde va Claude Code en un plan largo sin leerte la conversación. Cuando Claude arranca un plan de tres o más pasos, abre una ficha de progreso y cierra cada paso al terminarlo. Lo ves en:
+
+- **Banda** sobre el prompt (terminal y escritorio): anillo con el porcentaje, el paso actual, el plan y si Claude está trabajando, esperando tu respuesta o parado.
+- **Panel `/progress`** (en todas las superficies, también el móvil): todos los planes de este chat y de otros, con sus pasos, los subagentes pendientes de revisión y un botón para ir al chat de cada plan.
+- **Hitos** en la conversación: el comando que cierra un paso se dibuja como «Ahora: X · ✓ lo cerrado · N/M».
+
+No hace falta decirle a Claude que lo use: el plugin le enseña cuándo abrir una ficha, cerrar pasos, aceptar el trabajo de los subagentes y terminar.
+
+## Instalar
+
+En el prompt de una sesión de Claude Code:
+
+```
+/plugin install progress --marketplace alvaro-hi/claude-progress
+```
+
+Responde `y` para añadir el marketplace y elige el ámbito de usuario. O desde un terminal:
+
+```bash
+claude plugin marketplace add alvaro-hi/claude-progress
+```
+
+```bash
+claude plugin install progress@claude-progress --scope user
+```
+
+Después, abre una sesión nueva. Para quitarlo: `claude plugin uninstall progress@claude-progress`.
+
+**Requisitos:** una versión de Claude Code con mods (módulos de hooks), probado en la 2.1.287; macOS o Linux; `python3` 3.9 o posterior en el `PATH`.
+
+**Idioma:** la interfaz sigue el idioma del sistema (español o inglés). Para fijar uno, pon la opción `language` del plugin en `es` o `en` desde `/plugin` → progress → configurar.
+
+## Cómo funciona
+
+| Pieza | Dónde | Qué hace |
+|---|---|---|
+| CLI | `bin/progress`, `bin/progresslib.py` | Crea y actualiza las fichas en `~/.claude/progress/<id>.json`, con un lock por ficha |
+| Hook | `bin/progress_hook.py` | Inyecta el estado de la ficha activa en cada mensaje; registra los subagentes como filas; apunta inicio y fin de cada turno, el chat dueño y los tokens por paso; cierra el plan con todos los pasos hechos al acabar el turno |
+| Mod | `hooks/register.tsx` y el resto de `hooks/` | Dibuja la banda, el panel y los hitos; pasa los eventos de hooks de Claude Code al hook de Python; añade la regla de uso al system prompt |
+
+El mod solo lee fichas: toda escritura pasa por el CLI. El hook nunca bloquea una sesión: cualquier error va a `~/.claude/progress/_hook-errors.log` y la sesión sigue. Nada sale de tu máquina.
+
+### Reglas que siguen las fichas
+
+- El porcentaje solo cuenta pasos cerrados. Un subagente que entrega aparece como «entregado, por revisar» y solo suma cuando Claude lo acepta.
+- La actividad mueve el estado: un paso nuevo reabre una ficha pausada, cerrada o cancelada; un plan con todos los pasos cerrados se cierra solo al acabar el turno.
+- Una ficha está **parada** tras 30 minutos sin avance (15 si faltan uno o dos pasos), nunca con un turno o un subagente en marcha.
+- La sesión que toca una ficha es su dueña. Los otros chats la ven en «Otros planes en curso» y no la tocan salvo que se lo pidas.
+- Las terminadas se ven hasta medianoche. «Vaciar» mueve las terminadas y canceladas a `~/.claude/progress/_done/`; no se borra nada.
+
+## Usar el CLI tú mismo
+
+Claude llama al CLI con su ruta completa. Para usarlo desde tu terminal:
+
+```bash
+alias progress="$(ls -dt ~/.claude/plugins/cache/claude-progress/progress/*/ | head -1)bin/progress"
+```
+
+```bash
+progress start lanzamiento "Lanzamiento 2.0" --total 5            # ficha nueva
+progress plan lanzamiento build="Build" qa="QA" ship="Publicar"    # pasos previstos (el total sigue al plan)
+progress step lanzamiento "Build en verde" --key build             # cerrar un paso
+progress plan lanzamiento --add docs="Docs" --after qa             # replanificar
+progress child accept lanzamiento <cid>                            # aceptar la entrega de un subagente
+progress done lanzamiento                                          # terminar (o: cancel, pause)
+progress hide lanzamiento                                          # fuera de la lista hasta que se mueva
+progress clear                                                     # terminadas y canceladas → _done/
+progress chat lanzamiento                                          # abre su último chat, o imprime `claude --resume <id>`
+progress discreet toggle                                           # ocultar títulos al compartir pantalla
+```
+
+`CLAUDE_PROGRESS_DIR` lleva las fichas a otra carpeta en lugar de `~/.claude/progress`.
+
+## Desarrollo
+
+```bash
+python3 -m unittest discover tests
+```
+
+```bash
+claude plugin test .
+```
+
+```bash
+claude plugin validate .claude-plugin/plugin.json
+```
+
+Para probar cambios locales, añade la carpeta del repo como marketplace (`claude plugin marketplace add .`) e instala desde ella: Claude Code lee entonces el plugin directamente de la carpeta y `/reload-plugins` recoge los cambios.
+
+## Créditos
+
+Hecho por [Álvaro del Pozo](https://www.linkedin.com/in/alvaro-hiexperience/). Licencia MIT.

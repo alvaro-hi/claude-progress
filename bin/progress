@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""progress — progress cards for long Claude Code plans.
+
+  progress start <id> "title" --total N [--iters N] [--cwd DIR]
+  progress step <id> ["what was closed"] [--key K] [--iter N]
+  progress set <id> [--total N] [--iter N] [--iters N] [--step TXT] [--title TXT]
+  progress plan <id> key="Label" [key="Label" …]   (replaces the plan; step --key closes each step)
+  progress plan <id> --add key="Label" [--after key] | --remove key   (the total adjusts itself)
+  progress child add|deliver|accept|reject|drop <id> <cid> ["label"]
+  progress pause|resume|done|cancel <id>   (cancel = plan abandoned; pause = will be resumed)
+  progress hide <id>     (off the list until the plan moves again; does not touch the work)
+  progress clear         (finished and cancelled cards go to _done/; nothing is deleted)
+  progress chat <id>     (opens the card's last chat in the desktop app; for a terminal chat, prints its `claude --resume`)
+  progress ls [--json]
+  progress show <id>
+  progress discreet on|off|toggle
+"""
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import progresslib as P  # noqa: E402
+
+
+def cmd_start(a):
+    d = P.new_activity(a.id, a.title, a.total, a.iters, a.cwd)
+    print("%s · 0/%d · 0%%" % (d["id"], d["total"]))
+
+
+def summary(d):
+    it = d.get("iter")
+    extra = " · iter %d/%d" % tuple(it) if it else ""
+    return "%s · %d/%d · %d%%%s" % (d["id"], d["done"], d["total"], P.pct(d), extra)
+
+
+def cmd_step(a):
+    with P.mutate(a.id) as d:
+        counted = P.close_step(d, a.label, a.key)
+        if a.iter and d.get("iter"):
+            d["iter"][0] = a.iter
+    print(summary(d) + ("" if counted else " (key already closed, no change)"))
+
+
+def cmd_set(a):
+    with P.mutate(a.id) as d:
+        if a.total is not None and d.get("plan"):
+            raise P.ProgressError("%s has a plan: the plan sets the total; use plan --add/--remove "
+                                  "(or the whole plan to rename or reorder)" % a.id)
+        if a.total is not None:
+            d["total"] = max(0, a.total)
+        if a.iters is not None:
+            d["iter"] = [(d.get("iter") or [1])[0], a.iters]
+        if a.iter is not None:
+            d["iter"] = [a.iter, (d.get("iter") or [0, a.iter])[1]]
+        if a.step is not None:
+            d["step"] = P.clean(a.step)
+        if a.title is not None:
+            d["title"] = P.clean(a.title)
+        P.reopen_if_short(d)
+    print(summary(d))
+
+
+def cmd_plan(a):
+    if not (a.items or a.add or a.remove):
+        raise P.ProgressError("plan: pass the steps, or --add / --remove")
+    if a.items and (a.add or a.remove):
+        raise P.ProgressError("plan: either replace the whole plan or add/remove steps, not both")
+    with P.mutate(a.id) as d:
+        if a.items:
+            P.set_plan(d, a.items)
+        if a.remove:
+            P.remove_from_plan(d, a.remove)
+        if a.add:
+            P.add_to_plan(d, a.add, a.after)
+    print("%s · plan of %d steps" % (summary(d), len(d["plan"])))
+
+
+def cmd_status(a):
+    with P.mutate(a.id) as d:
+        d["status"] = {"pause": "paused", "resume": "active", "done": "done", "cancel": "cancelled"}[a.cmd]
+        d.pop("hidden", None)  # cualquier cambio de estado es actividad: si se cierra, que se vea cerrada
+        # los agentes que siguen en marcha no se tocan: los marca su hook cuando de verdad acaban
+    print("%s → %s" % (summary(d), d["status"]))
+
+
+def cmd_child(a):
+    cid = P.clean(a.cid, 64)
+    with P.mutate(a.id) as d:
+        ch = d.setdefault("children", {})
+        d.pop("hidden", None)
+        t = P.iso(P.now())
+        if a.action == "add":
+            ch[cid] = {"label": P.clean(a.label or cid), "state": "running",
+                       "started": t, "updated": t}
+        else:
+            if cid not in ch:
+                raise P.ProgressError("no child %r in %r" % (cid, a.id))
+            c = ch[cid]
+            if a.action == "deliver" and c["state"] == "running":
+                c["state"] = "delivered"
+            elif a.action == "reject":
+                c["state"] = "running"  # vuelve a encargarse
+                c["started"] = t
+            elif a.action == "drop":
+                c["state"] = "rejected"  # descartado: ni vuelve a encargarse ni suma paso
+            elif a.action == "accept":
+                c["state"] = "accepted"
+                P.close_step(d, a.label or c.get("label"), key="child:" + cid)
+            c["updated"] = t
+    print("%s · child %s: %s" % (summary(d), cid, ch[cid]["state"]))
+
+
+def cmd_hide(a):
+    with P.mutate(a.id) as d:
+        if d.get("status") not in ("active", "paused"):
+            raise P.ProgressError("%s is already closed; to remove it from the list, use progress clear" % a.id)
+        d["hidden"] = True
+    print("%s · hidden · comes back when the plan moves" % summary(d))
+
+
+def cmd_clear(a):
+    moved = P.clear()
+    print("cleared %d closed" % len(moved))
+
+
+def cmd_chat(a):
+    target = P.chat_target(P.read(a.id))
+    if not target:
+        raise P.ProgressError("%s does not know which chat it came from" % a.id)
+    app, cid = target
+    if app == "cli":
+        print("claude --resume " + cid)
+        return
+    url = "claude://claude.ai/epitaxy/" + cid
+    opener = shutil.which("open") if sys.platform == "darwin" else shutil.which("xdg-open")
+    try:
+        if not opener:
+            raise OSError("no URL opener")
+        subprocess.run([opener, url], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("opened in the app: " + cid)
+    except (OSError, subprocess.CalledProcessError):
+        print("could not open the app; open this link in it: " + url)
+
+
+def cmd_ls(a):
+    good, bad = P.load_all()
+    if a.json:
+        print(json.dumps({"activities": good, "unreadable": bad}, ensure_ascii=False))
+        return
+    for d in good:
+        print("%-8s %s · %s" % (d.get("status"), summary(d), d.get("title")))
+    for b in bad:
+        print("unreadable %s" % b)
+
+
+def cmd_show(a):
+    print(json.dumps(P.read(a.id), ensure_ascii=False, indent=1))
+
+
+def cmd_discreet(a):
+    cur = bool(P.config().get("discreet"))
+    val = {"on": True, "off": False, "toggle": not cur}[a.mode]
+    P.set_config(discreet=val)
+    print("discreet mode: %s" % ("on" if val else "off"))
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="progress", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    sp = ap.add_subparsers(dest="cmd", required=True)
+
+    s = sp.add_parser("start"); s.add_argument("id"); s.add_argument("title")
+    s.add_argument("--total", type=int, required=True); s.add_argument("--iters", type=int)
+    s.add_argument("--cwd"); s.set_defaults(fn=cmd_start)
+
+    s = sp.add_parser("step"); s.add_argument("id"); s.add_argument("label", nargs="?")
+    s.add_argument("--key"); s.add_argument("--iter", type=int); s.set_defaults(fn=cmd_step)
+
+    s = sp.add_parser("set"); s.add_argument("id")
+    s.add_argument("--total", type=int); s.add_argument("--iter", type=int)
+    s.add_argument("--iters", type=int); s.add_argument("--step"); s.add_argument("--title")
+    s.set_defaults(fn=cmd_set)
+
+    s = sp.add_parser("plan"); s.add_argument("id"); s.add_argument("items", nargs="*")
+    s.add_argument("--add", action="append", default=[]); s.add_argument("--after")
+    s.add_argument("--remove", action="append", default=[])
+    s.set_defaults(fn=cmd_plan)
+
+    for name in ("pause", "resume", "done", "cancel"):
+        s = sp.add_parser(name); s.add_argument("id"); s.set_defaults(fn=cmd_status)
+
+    s = sp.add_parser("hide"); s.add_argument("id"); s.set_defaults(fn=cmd_hide)
+    s = sp.add_parser("clear"); s.set_defaults(fn=cmd_clear)
+    s = sp.add_parser("chat"); s.add_argument("id"); s.set_defaults(fn=cmd_chat)
+
+    s = sp.add_parser("child")
+    s.add_argument("action", choices=("add", "deliver", "accept", "reject", "drop"))
+    s.add_argument("id"); s.add_argument("cid"); s.add_argument("label", nargs="?")
+    s.set_defaults(fn=cmd_child)
+
+    s = sp.add_parser("ls"); s.add_argument("--json", action="store_true"); s.set_defaults(fn=cmd_ls)
+    s = sp.add_parser("show"); s.add_argument("id"); s.set_defaults(fn=cmd_show)
+    s = sp.add_parser("discreet"); s.add_argument("mode", choices=("on", "off", "toggle"))
+    s.set_defaults(fn=cmd_discreet)
+
+    a = ap.parse_args(argv)
+    try:
+        P.gc()
+        a.fn(a)
+    except (P.ProgressError, FileNotFoundError) as e:
+        print("progress: %s" % e, file=sys.stderr)
+        return 1
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        print("progress: unexpected error (%s: %s)" % (type(e).__name__, e), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
