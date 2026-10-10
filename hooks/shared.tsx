@@ -83,13 +83,17 @@ function stepLine(T: El, d: Ficha, s: Snap, r: StepRow, i: number, isCur: boolea
   return (
     <Box key={`paso-${d.id}-${i}`} flexDirection="row" gap={1}>
       <Text color={gcol}>{glyph}</Text>
-      <Box flexDirection="row" flexGrow={1} flexShrink={1}>
+      <Box flexDirection="row" flexGrow={1} flexShrink={1} minWidth={0}>
         <Text bold={isCur} {...(r.isDone ? dim : {})} wrap="wrap">
           {label}
         </Text>
         {run > 0 && <Text color="claude">{` · ${t.agents(run)}`}</Text>}
       </Box>
-      {when && <Text dimColor>{when}</Text>}
+      {when && (
+        <Box flexShrink={0}>
+          <Text dimColor>{when}</Text>
+        </Box>
+      )}
     </Box>
   )
 }

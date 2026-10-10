@@ -38,7 +38,7 @@ function closingBand(T: El, d: Ficha, s: Snap) {
   return (
     <Box flexDirection="row" gap={1} alignItems="center">
       {ring(T, d, 'done', 46, 6.5, false)}
-      <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
         <Text bold color="success" wrap="truncate-end">
           {`${nameOf(T, d, s)} · ${t.finished}`}
         </Text>
@@ -64,7 +64,9 @@ export function drawBand(T: El, s: Snap, isWorking: boolean, ui: UiState, act: A
   const step = s.discreet ? undefined : currentStep(d)
   const pinned = ui.pinned
   const pin = (
-    <Button key="fijar" label={pinned ? '▾' : '▸'} plain dimColor onPress={act.togglePin} />
+    <Box flexShrink={0}>
+      <Button key="fijar" label={pinned ? '▾' : '▸'} plain dimColor onPress={act.togglePin} />
+    </Box>
   )
 
   // Fijada: la cabecera pasa a ser el plan; el paso actual vive solo en la lista.
@@ -74,12 +76,14 @@ export function drawBand(T: El, s: Snap, isWorking: boolean, ui: UiState, act: A
       <Box key="banda" flexDirection="column">
         <Box flexDirection="row" gap={1} alignItems="center">
           {ring(T, d, tone, 46, 6.5, true)}
-          <Box flexGrow={1} flexShrink={1}>
+          <Box flexGrow={1} flexShrink={1} minWidth={0}>
             <Text bold wrap="wrap">
               {name}
             </Text>
           </Box>
-          <Button key="panel" label={t.panelButton} plain dimColor onPress={() => act.openPanel(d.id)} />
+          <Box flexShrink={0}>
+            <Button key="panel" label={t.panelButton} plain dimColor onPress={() => act.openPanel(d.id)} />
+          </Box>
           {pin}
         </Box>
         <Box paddingLeft={8} flexDirection="column">
@@ -109,7 +113,7 @@ export function drawBand(T: El, s: Snap, isWorking: boolean, ui: UiState, act: A
     <Box key="banda" flexDirection="column">
       <Box flexDirection="row" gap={1} alignItems="center">
         {ring(T, d, tone, 46, 6.5, true)}
-        <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+        <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
           <Text bold {...color1} wrap="truncate-end">
             {line1}
           </Text>

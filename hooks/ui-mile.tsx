@@ -47,7 +47,7 @@ export function mileRow(T: El, m: Milestone, s: Snap, key: string, act: Actions,
     <Box key={key} flexDirection="column">
       <Box flexDirection="row" gap={1} alignItems="center">
         {ring(T, shown, tone, 22, 3, false)}
-        <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+        <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
           <Text bold {...(tone === 'done' ? { color: 'success' as const } : {})} wrap="truncate-end">
             {main}
           </Text>
@@ -55,7 +55,9 @@ export function mileRow(T: El, m: Milestone, s: Snap, key: string, act: Actions,
             {sub}
           </Text>
         </Box>
-        <Button key={`${key}-abrir`} label={T.t.openProgress} plain dimColor onPress={() => act.openPanel(m.ficha.id)} />
+        <Box flexShrink={0}>
+          <Button key={`${key}-abrir`} label={T.t.openProgress} plain dimColor onPress={() => act.openPanel(m.ficha.id)} />
+        </Box>
       </Box>
       {extra}
     </Box>

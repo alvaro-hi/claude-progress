@@ -303,6 +303,31 @@ describe('banda', () => {
     expect(await texts(ui)).toBe('engine')
   })
 
+  test('con texto largo, el texto encoge y ▸ sigue a la vista para desplegar', IN_ES, async ($, on) => {
+    const long = 'Restos de radar-portales y prompts de mantenimiento con un título que no cabe en ninguna banda '.repeat(3)
+    world(on, filesOf(fiche('mio', { owner: SID, ...NEAR_END, title: long })))
+    await start($)
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ ...WORKING, surface })
+      const seen: boolean[] = []
+      for (let i = 0; i < 2; i++) {
+        const pinned = (await ui.find({ key: 'panel' })) !== undefined // fijar dura entre montajes
+        seen.push(pinned)
+        const boxes = await ui.findAll({ type: 'Box' })
+        const growing = boxes.filter(b => b.props.flexGrow === 1)
+        expect(growing.length).toBeGreaterThan(0)
+        for (const b of growing) expect(b.props.minWidth).toBe(0)
+        const fixed = boxes.filter(b => b.props.flexShrink === 0)
+        expect(fixed.length).toBeGreaterThanOrEqual(pinned ? 2 : 1) // ▸; fijada, también «Panel» y las horas de la lista
+        expect(await ui.find({ key: 'fijar' })).toBeDefined()
+        await ui.press({ key: 'fijar' })
+      }
+      expect(seen).toContain(true) // ▸ despliega y ▾ pliega
+      expect(seen).toContain(false)
+      await ui.unmount()
+    }
+  })
+
   test('sin ficha deja la banda al motor', IN_ES, async ($, on) => {
     world(on, filesOf(fiche('ajena', { cwd: '/otra' })))
     await start($)
