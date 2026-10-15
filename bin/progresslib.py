@@ -545,6 +545,24 @@ def desktop_chat_for(cli_id, root=None):
     return None
 
 
+def desktop_chat_title(local_id, root=None):
+    """El título que la app da al chat `local_…` (lo nombra el usuario o la app); None si no lo tiene."""
+    root = root or os.environ.get("CLAUDE_APP_SESSIONS_DIR") or APP_SESSIONS
+    if not DESKTOP_ID_RE.fullmatch(local_id or ""):
+        return None
+    name = local_id + ".json"
+    for dirpath, _, names in os.walk(root):
+        if name not in names:
+            continue
+        try:
+            with open(os.path.join(dirpath, name), encoding="utf-8") as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            return None
+        return (clean(d.get("title")) or None) if isinstance(d, dict) else None
+    return None
+
+
 def chat_target(data):
     """Cómo volver al último chat de la ficha: ("desktop", local_id) o ("cli", session_id); None si no se sabe."""
     c = data.get("chat") if isinstance(data.get("chat"), dict) else {}

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Hook único para Claude Code. Uso: progress_hook.py <evento>, payload JSON por stdin.
 
-Eventos: UserPromptSubmit · Stop · PreToolUse (Agent) · PostToolUse (Agent) ·
-SubagentStart · SubagentStop.
+Eventos: UserPromptSubmit · Stop · PreToolUse (Agent) · PostToolUse (Agent, Bash y la lista de
+tareas de la app: update_plan y wrap_up) · SubagentStart · SubagentStop.
 
 S4: nunca bloquea. Cualquier error → sale 0 sin salida. No usa `decision`.
 """
@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import tempfile
+import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
@@ -141,7 +142,9 @@ def on_prompt(P, payload):
           + (" Active card from ANOTHER session in this folder (continuing it here moves it to this session): "
              if foreign else " Active card of this session: " if owner
              else " Active card in this folder: ") + " · ".join(parts)
-          + ". To close a step: %s step %s \"…\" --key <key>." % (CLI, d["id"]))
+          + (". It mirrors your task list (update_plan), so steps close by themselves; use %s only for"
+             " children, iterations, cancel or pause." % CLI if d.get("native")
+             else ". To close a step: %s step %s \"…\" --key <key>." % (CLI, d["id"])))
     missed = prev.get("missed")
     if missed == d["id"] and not foreign:
         print("[progress] The previous turn took over 10 min and card %s was not updated." % d["id"])
@@ -234,7 +237,9 @@ def set_child(P, payload, match, state):
 
 
 def on_post_tool(P, payload):
-    if payload.get("tool_name") == "Bash":
+    if payload.get("tool_name") in (NATIVE_PLAN, NATIVE_WRAP):
+        on_native_plan(P, payload)
+    elif payload.get("tool_name") == "Bash":
         on_post_bash(P, payload)
     else:
         on_post_agent(P, payload)
@@ -265,6 +270,192 @@ def on_subagent_stop(P, payload):
         set_child(P, payload, lambda k, c: c.get("agent_id") == aid, "delivered")
 
 
+# ── Lista de tareas de la app de escritorio ────────────────────────────────────────────────────────
+# En la app, el modelo lleva su lista con update_plan y la cierra con wrap_up. El hook la refleja en una
+# ficha propia de la sesión (`app-<sesión>-<n>`, con `native: true`), así el modelo no lleva dos listas.
+# Lo que la lista no tiene (iteraciones, subagentes, cancel, pause) sigue yendo por el CLI.
+# La última lista de cada sesión se guarda en _native/<sesión>.json: advance, done y start son cambios
+# sobre ella, y sus claves de paso sobreviven a los replanes.
+
+NATIVE_PLAN = "mcp__ccd_turn__update_plan"
+NATIVE_WRAP = "mcp__ccd_turn__wrap_up"
+NATIVE_MIN = 3  # el umbral de la regla: solo los planes de 3 pasos o más abren ficha
+NATIVE_STATES = ("pending", "in_progress", "completed")
+
+
+def native_file(P, sid):
+    P.ensure_dir()
+    d = os.path.join(P.PROGRESS_DIR, "_native")
+    os.makedirs(d, exist_ok=True)
+    safe = "".join(c for c in sid if c.isalnum() or c == "-")[:64]
+    return os.path.join(d, safe + ".json")
+
+
+def native_items(P, raw):
+    """La lista que manda la app → [{content, status}]; None si no tiene la forma esperada."""
+    if not isinstance(raw, list) or not all(isinstance(i, dict) for i in raw):
+        return None
+    out = []
+    for i in raw:
+        content = P.clean(i.get("content"))
+        if content:
+            out.append({"content": content, "status": i["status"] if i.get("status") in NATIVE_STATES else "pending"})
+    return out
+
+
+def native_step(P, items, ti):
+    """advance, done y start sobre la lista anterior, con la semántica de la app."""
+    items = [dict(i) for i in items]
+    if ti.get("advance") is True:
+        cur = next((i for i in items if i["status"] == "in_progress"), None)
+        if cur:
+            cur["status"] = "completed"
+        nxt = next((i for i in items if i["status"] == "pending"), None)
+        if nxt:
+            nxt["status"] = "in_progress"
+        return items
+    done, start = ti.get("done"), ti.get("start")
+    if isinstance(done, list) or type(start) is int:
+        ok = lambda n: type(n) is int and 1 <= n <= len(items)
+        for n in done or []:
+            if ok(n):
+                items[n - 1]["status"] = "completed"
+        if ok(start):
+            items[start - 1]["status"] = "in_progress"
+        return items
+    raise P.ProgressError("update_plan without a known shape: %s" % sorted(ti))
+
+
+def slug(text):
+    s = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-")[:40].strip("-") or "step"
+
+
+def native_keys(new, old, closed):
+    """Clave de cada paso: la del paso anterior con el mismo texto; si no, la del anterior en la misma
+    posición, si nadie la ha tomado y no está cerrada (un paso renombrado); si no, una nueva. Una clave
+    nueva nunca repite una vieja: un paso quitado y vuelto a poner con otro texto no hereda su cierre."""
+    keys, taken = [None] * len(new), set()
+    for i, n in enumerate(new):
+        k = next((o["key"] for o in old if o["content"] == n["content"] and o["key"] not in taken), None)
+        if k:
+            keys[i] = k
+            taken.add(k)
+    for i in range(len(new)):
+        if keys[i] is None and i < len(old) and old[i]["key"] not in taken and old[i]["key"] not in closed:
+            keys[i] = old[i]["key"]
+            taken.add(keys[i])
+    used = taken | set(closed) | {o["key"] for o in old}
+    for i, n in enumerate(new):
+        if keys[i] is None:
+            base = k = slug(n["content"])
+            j = 2
+            while k in used:
+                k, j = "%s-%d" % (base, j), j + 1
+            keys[i] = k
+            used.add(k)
+    return [dict(n, key=k) for n, k in zip(new, keys)]
+
+
+def native_id(P, sid, st):
+    """`app-<8 primeros de la sesión>-<n>`: ni el de una ficha viva ni el de una archivada."""
+    base = "app-" + "".join(c for c in sid.lower() if c.isalnum())[:8]
+    ddir = os.path.join(P.PROGRESS_DIR, P.DONE_DIR_NAME)
+    archived = os.listdir(ddir) if os.path.isdir(ddir) else []
+    n = int(st.get("n") or 0)
+    while True:
+        n += 1
+        aid = "%s-%d" % (base, n)
+        if not os.path.exists(P.path_for(aid)) and not any(
+                re.fullmatch(re.escape(aid) + r"-\d{8}-\d{6}\.json", a) for a in archived):
+            st["n"] = n
+            return aid
+
+
+def native_title(P, items):
+    """El título del chat en la app; mientras no lo tenga, el primer paso."""
+    host = os.environ.get("CLAUDE_CODE_HOST_SESSION_ID") or ""
+    app = P.desktop_chat_title(host) if os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "claude-desktop" else None
+    return app or items[0]["content"]
+
+
+def closed_keys(P, aid):
+    try:
+        return set(P.read(aid).get("keys") or []) if aid else set()
+    except (P.ProgressError, OSError, ValueError):
+        return set()
+
+
+def retire(P, aid):
+    """Una lista nueva (`new_task`) es otra tarea: la ficha anterior se da por terminada si lo estaba
+    y, si no, por cancelada. Vuelve sola si alguien la retoma con el CLI."""
+    try:
+        if P.read(aid).get("status") != "active":
+            return
+        with P.mutate(aid) as f:
+            if f.get("status") == "active":
+                full = (f.get("done") or 0) >= (f.get("total") or 0) > 0
+                f["status"] = "done" if full else "cancelled"
+    except (P.ProgressError, OSError, ValueError):
+        pass
+
+
+def native_sync(P, f, items, sid, st, cum, verb):
+    """La ficha pasa a tener el plan de la lista y los pasos que la lista da por hechos."""
+    P.set_plan(f, ["%s=%s" % (i["key"], i["content"]) for i in items])
+    for i in items:
+        if i["status"] == "completed":
+            P.close_step(f, label=i["content"], key=i["key"])
+    if f.get("title") == st.get("title"):  # nadie lo ha cambiado con `set --title`: sigue al del chat
+        f["title"] = st["title"] = P.clean(native_title(P, items))
+    f["native"] = True
+    f["owner"] = sid
+    f["chat"] = chat_ref(P, sid)
+    if cum is not None:
+        P.mark_tokens(f, sid, cum, verb)
+
+
+def on_native_plan(P, payload):
+    """Refleja en una ficha cada llamada a update_plan o wrap_up de la sesión."""
+    sid, ti, tool = payload.get("session_id"), payload.get("tool_input"), payload.get("tool_name")
+    if not sid or payload.get("agent_id") or not isinstance(ti, dict):
+        return  # un subagente no lleva la lista del chat
+    nf = native_file(P, sid)
+    st = read_json(nf)
+    old = [i for i in st.get("items") or [] if isinstance(i, dict) and i.get("key") and i.get("content")]
+    aid = st.get("card")
+    if tool == NATIVE_WRAP:
+        items = [dict(i, status="completed") for i in old]
+    elif "items" in ti:
+        new = native_items(P, ti["items"])
+        if new is None:
+            raise P.ProgressError("update_plan items without a known shape")
+        if ti.get("scope") in ("first_task", "new_task"):
+            if aid:
+                retire(P, aid)
+            aid, old = None, []
+        items = native_keys(new, old, closed_keys(P, aid))
+    else:
+        items = native_step(P, old, ti)
+    st["items"] = items
+    cum = P.session_tokens(payload.get("transcript_path")) if items else None
+    if aid and items:
+        try:
+            with P.mutate(aid) as f:
+                native_sync(P, f, items, sid, st, cum, "step")
+        except P.ProgressError:
+            aid = None  # la ficha ya no está (vaciada o borrada): se abre otra si la lista da para ello
+    if not aid and len(items) >= NATIVE_MIN and tool != NATIVE_WRAP:
+        aid = native_id(P, sid, st)
+        st["title"] = P.new_activity(aid, native_title(P, items), len(items), cwd=payload.get("cwd"))["title"]
+        with P.mutate(aid) as f:
+            native_sync(P, f, items, sid, st, cum, "start")
+    st["card"] = aid
+    write_json(nf, st)
+    if tool == NATIVE_WRAP and aid:
+        auto_close(P, aid)
+
+
 HANDLERS = {
     "UserPromptSubmit": on_prompt, "Stop": on_stop,
     "PreToolUse": on_pre_agent, "PostToolUse": on_post_tool,
@@ -280,7 +471,7 @@ def main():
         tool = payload.get("tool_name")
         if ev == "PreToolUse" and tool not in ("Agent", "Task"):
             return
-        if ev == "PostToolUse" and tool not in ("Agent", "Task", "Bash"):
+        if ev == "PostToolUse" and tool not in ("Agent", "Task", "Bash", NATIVE_PLAN, NATIVE_WRAP):
             return
         fn = HANDLERS.get(ev)
         if fn:

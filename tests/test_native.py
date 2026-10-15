@@ -1,0 +1,219 @@
+"""La lista de tareas de la app (update_plan y wrap_up) reflejada en una ficha.
+
+native_f0.jsonl son los PostToolUse reales de la prueba F0 (2026-10-15): una sesión de la app con una
+tarea de 4 pasos, tres `advance` y `wrap_up`. El resto de casos usan payloads con esa misma forma.
+"""
+import json
+import os
+import subprocess
+import tempfile
+import unittest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HOOK = os.path.join(ROOT, "bin", "progress_hook.py")
+CLI = os.path.join(ROOT, "bin", "progress")
+F0 = os.path.join(ROOT, "tests", "fixtures", "native_f0.jsonl")
+PLAN, WRAP = "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"
+SID = "5e55a0b1-0000-4000-8000-000000000001"
+LOCAL = "local_11111111-2222-4333-8444-555555555555"
+
+
+def items(*steps):
+    """("a", "c") → paso a completado; ("b", "i") → en curso; texto solo → pendiente."""
+    st = {"c": "completed", "i": "in_progress"}
+    return [{"content": s, "status": "pending"} if isinstance(s, str) else {"content": s[0], "status": st[s[1]]}
+            for s in steps]
+
+
+class Native(unittest.TestCase):
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="vault con espacio @ "))
+        self.dir = os.path.join(self.tmp, ".progress")
+        self.cwd = os.path.join(self.tmp, "proyecto")
+        os.makedirs(self.cwd)
+        self.env = dict(os.environ, CLAUDE_PROGRESS_DIR=self.dir,
+                        CLAUDE_APP_SESSIONS_DIR=os.path.join(self.tmp, "app"))
+        for k in ("CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_HOST_SESSION_ID"):
+            self.env.pop(k, None)  # los tests no leen el chat de la app en la que corren
+
+    def hook(self, ev, payload, env=None):
+        base = {"session_id": SID, "cwd": self.cwd, "hook_event_name": ev}
+        base.update(payload)
+        return subprocess.run([HOOK, ev], input=json.dumps(base), env=env or self.env,
+                              capture_output=True, text=True, timeout=5)
+
+    def call(self, tool_input, tool=PLAN, **extra):
+        r = self.hook("PostToolUse", dict({"tool_name": tool, "tool_input": tool_input}, **extra))
+        self.assertEqual((r.returncode, r.stdout), (0, ""))
+
+    def cli(self, *a):
+        subprocess.run([CLI, *a], env=self.env, check=True, capture_output=True)
+
+    def cards(self):
+        names = os.listdir(self.dir) if os.path.isdir(self.dir) else []
+        return sorted(n[:-5] for n in names if n.endswith(".json") and not n.startswith(("_", ".")))
+
+    def card(self, aid):
+        with open(os.path.join(self.dir, aid + ".json")) as f:
+            return json.load(f)
+
+    def plan_of(self, d):
+        return [p["label"] for p in d.get("plan") or []]
+
+    def test_f0_replay(self):
+        with open(F0) as f:
+            calls = [json.loads(line) for line in f]
+        aid = "app-dfcbaf7b-1"
+        seen = []
+        for c in calls:
+            c = dict(c, cwd=self.cwd)  # la carpeta de la prueba no existe aquí
+            r = self.hook("PostToolUse", c)
+            self.assertEqual((r.returncode, r.stdout), (0, ""))
+            d = self.card(aid)
+            seen.append((d["done"], d["total"], d["status"]))
+        self.assertEqual(seen, [(0, 4, "active"), (1, 4, "active"), (2, 4, "active"), (3, 4, "active"),
+                                (4, 4, "done")])
+        d = self.card(aid)
+        self.assertEqual(d["title"], "Crear a.txt con «uno»")
+        self.assertEqual(self.plan_of(d), ["Crear a.txt con «uno»", "Crear b.txt con «dos»",
+                                           "Crear c.txt con «tres»", "Listar contenido del scratchpad"])
+        self.assertTrue(d["native"])
+        self.assertEqual(d["owner"], "dfcbaf7b-f21b-41f9-bd87-1d0c7b5f9a13")
+        self.assertEqual([s["label"] for s in d["steps"]], self.plan_of(d))
+        self.assertEqual(self.cards(), [aid])
+
+    def test_short_list_opens_no_card_until_it_grows(self):
+        self.call({"items": items(("A", "i"), "B"), "scope": "first_task"})
+        self.assertEqual(self.cards(), [])
+        self.call({"advance": True})
+        self.call({"items": items(("A", "c"), ("B", "i"), "C"), "scope": "continuation"})
+        aid = "app-5e55a0b1-1"
+        self.assertEqual(self.cards(), [aid])
+        d = self.card(aid)
+        self.assertEqual((d["done"], d["total"]), (1, 3))
+        self.assertEqual(d["keys"], ["a"])
+
+    def test_done_and_start_by_number(self):
+        self.call({"items": items(("A", "i"), "B", "C", "D"), "scope": "first_task"})
+        self.call({"done": [1, 2], "start": 4})
+        self.call({"done": [9, "x", True]})  # fuera de rango o sin ser un número: se ignora
+        d = self.card("app-5e55a0b1-1")
+        self.assertEqual((d["done"], d["total"]), (2, 4))
+        self.assertEqual(d["keys"], ["a", "b"])
+
+    def test_replan_keeps_closed_steps_and_keys(self):
+        self.call({"items": items(("Leer el código", "i"), "Escribir tests", "Publicar"), "scope": "first_task"})
+        self.call({"advance": True})
+        # orden nuevo, un paso renombrado en su sitio, uno quitado y uno nuevo al final
+        self.call({"items": items(("Leer el código", "c"), ("Escribir los tests", "i"), "Revisar", "Documentar"),
+                   "scope": "continuation"})
+        d = self.card("app-5e55a0b1-1")
+        self.assertEqual(self.plan_of(d), ["Leer el código", "Escribir los tests", "Revisar", "Documentar"])
+        self.assertEqual([p["key"] for p in d["plan"]], ["leer-el-codigo", "escribir-tests", "publicar", "documentar"])
+        self.assertEqual((d["done"], d["total"]), (1, 4))
+
+    def test_removed_closed_step_is_not_inherited(self):
+        self.call({"items": items(("Paso uno", "c"), ("Paso dos", "i"), "Paso tres"), "scope": "first_task"})
+        self.call({"items": items(("Otra cosa", "i"), "Paso dos", "Paso tres"), "scope": "continuation"})
+        d = self.card("app-5e55a0b1-1")
+        self.assertEqual([p["key"] for p in d["plan"]], ["otra-cosa", "paso-dos", "paso-tres"])
+        self.assertEqual((d["done"], d["total"]), (1, 4))  # lo cerrado fuera del plan sigue contando
+
+    def test_repeated_call_counts_once(self):
+        call = {"items": items(("A", "c"), ("B", "i"), "C"), "scope": "first_task"}
+        self.call(call)
+        self.call(dict(call, scope="continuation"))
+        self.assertEqual(self.card("app-5e55a0b1-1")["done"], 1)
+
+    def test_new_task_retires_previous_card(self):
+        self.call({"items": items(("A", "c"), ("B", "i"), "C"), "scope": "first_task"})
+        self.call({"items": items(("X", "i"), "Y", "Z"), "scope": "new_task"})
+        self.assertEqual(self.card("app-5e55a0b1-1")["status"], "cancelled")
+        d = self.card("app-5e55a0b1-2")
+        self.assertEqual((d["status"], d["done"], self.plan_of(d)), ("active", 0, ["X", "Y", "Z"]))
+
+    def test_new_task_after_wrap_up_keeps_first_done(self):
+        self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"})
+        self.call({"recap": "hecho"}, tool=WRAP)
+        self.assertEqual(self.card("app-5e55a0b1-1")["status"], "done")
+        self.call({"items": items(("X", "i"), "Y", "Z"), "scope": "new_task"})
+        self.assertEqual(self.card("app-5e55a0b1-1")["status"], "done")
+        self.assertEqual(self.card("app-5e55a0b1-2")["status"], "active")
+
+    def test_continuation_reopens_wrapped_card(self):
+        self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"})
+        self.call({"recap": "hecho"}, tool=WRAP)
+        self.call({"items": items(("A", "c"), ("B", "c"), ("C", "c"), ("D", "i")), "scope": "continuation"})
+        d = self.card("app-5e55a0b1-1")
+        self.assertEqual((d["status"], d["done"], d["total"]), ("active", 3, 4))
+        self.assertEqual(self.cards(), ["app-5e55a0b1-1"])
+
+    def test_cleared_card_is_replaced(self):
+        self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"})
+        self.call({"recap": "hecho"}, tool=WRAP)
+        self.cli("clear")
+        self.call({"items": items(("A", "c"), ("B", "c"), ("C", "c"), ("D", "i")), "scope": "continuation"})
+        self.assertEqual(self.cards(), ["app-5e55a0b1-2"])
+
+    def test_wrap_up_waits_for_running_agents(self):
+        self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"})
+        self.hook("PreToolUse", {"tool_name": "Agent", "tool_use_id": "toolu_1",
+                                 "tool_input": {"description": "revisar", "run_in_background": True}})
+        self.call({"recap": "hecho"}, tool=WRAP)
+        d = self.card("app-5e55a0b1-1")
+        self.assertEqual((d["done"], d["total"], d["status"]), (3, 3, "active"))
+        self.assertEqual([c["label"] for c in d["children"].values()], ["revisar"])
+
+    def test_subagent_and_unknown_shapes_are_ignored(self):
+        self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"}, agent_id="agent-1")
+        self.assertEqual(self.cards(), [])
+        self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"})
+        self.call({"rename": "x"})
+        self.call({"items": "no es una lista"})
+        d = self.card("app-5e55a0b1-1")
+        self.assertEqual((d["done"], d["total"]), (0, 3))
+        with open(os.path.join(self.dir, "_hook-errors.log")) as f:
+            self.assertEqual(f.read().count("update_plan"), 2)
+
+    def test_wrap_up_without_list_does_nothing(self):
+        self.call({"recap": "hecho"}, tool=WRAP)
+        self.assertEqual(self.cards(), [])
+
+    def test_title_follows_app_chat_until_renamed(self):
+        chat = os.path.join(self.tmp, "app", "cuenta", "org", LOCAL + ".json")
+        os.makedirs(os.path.dirname(chat))
+        with open(chat, "w") as f:
+            json.dump({"sessionId": LOCAL, "cliSessionId": SID, "title": "Integrar la lista"}, f)
+        env = dict(self.env, CLAUDE_CODE_ENTRYPOINT="claude-desktop", CLAUDE_CODE_HOST_SESSION_ID=LOCAL)
+        run = lambda ti: self.hook("PostToolUse", {"tool_name": PLAN, "tool_input": ti}, env=env)
+        run({"items": items(("A", "i"), "B", "C"), "scope": "first_task"})
+        d = self.card("app-5e55a0b1-1")
+        self.assertEqual(d["title"], "Integrar la lista")
+        self.assertEqual(d["chat"]["app"], "desktop")
+        with open(chat, "w") as f:
+            json.dump({"sessionId": LOCAL, "cliSessionId": SID, "title": "Integrar la lista nativa"}, f)
+        run({"advance": True})
+        self.assertEqual(self.card("app-5e55a0b1-1")["title"], "Integrar la lista nativa")
+        self.cli("set", "app-5e55a0b1-1", "--title", "Mi título")
+        run({"advance": True})
+        self.assertEqual(self.card("app-5e55a0b1-1")["title"], "Mi título")
+
+    def test_prompt_says_the_card_mirrors_the_list(self):
+        self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"})
+        r = self.hook("UserPromptSubmit", {"prompt": "sigue"})
+        self.assertIn("Active card of this session: app-5e55a0b1-1", r.stdout)
+        self.assertIn("mirrors your task list", r.stdout)
+        self.assertNotIn("To close a step", r.stdout)
+
+    def test_other_sessions_lists_stay_apart(self):
+        self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"})
+        self.call({"items": items(("X", "i"), "Y", "Z"), "scope": "first_task"},
+                  session_id="0ther5e5-0000-4000-8000-000000000002")
+        self.call({"advance": True})
+        self.assertEqual(self.cards(), ["app-0ther5e5-1", "app-5e55a0b1-1"])
+        self.assertEqual(self.card("app-5e55a0b1-1")["done"], 1)
+        self.assertEqual(self.card("app-0ther5e5-1")["done"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
