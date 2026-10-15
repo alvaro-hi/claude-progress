@@ -2,6 +2,8 @@
 
 [English](README.md) · **Español**
 
+![Un plan avanzando por sus pasos en la banda sobre el prompt](docs/media/demo.gif)
+
 Ve por dónde va Claude Code en un plan largo sin leerte la conversación. Cuando Claude arranca un plan de tres o más pasos, abre una ficha de progreso y cierra cada paso al terminarlo. Lo ves en:
 
 - **Banda** sobre el prompt (terminal y escritorio): anillo con el porcentaje, el paso actual, el plan y si Claude está trabajando, esperando tu respuesta o parado.
@@ -9,6 +11,12 @@ Ve por dónde va Claude Code en un plan largo sin leerte la conversación. Cuand
 - **Hitos** en la conversación: el comando que cierra un paso se dibuja como «Ahora: X · ✓ lo cerrado · N/M».
 
 No hace falta decirle a Claude que lo use: el plugin le enseña cuándo abrir una ficha, cerrar pasos, aceptar el trabajo de los subagentes y terminar.
+
+![La banda desplegada: pasos hechos, el actual con su agente y lo que viene](docs/media/band-desktop-open.png)
+
+![El panel /progress: planes de este chat, de otros chats y terminados hoy](docs/media/panel-desktop.png)
+
+*Las capturas usan datos de demo (`scripts/demo.py`) y la interfaz en inglés.*
 
 ## Instalar
 
@@ -43,6 +51,13 @@ Después, abre una sesión nueva. Para quitarlo: `claude plugin uninstall progre
 | Mod | `hooks/register.tsx` y el resto de `hooks/` | Dibuja la banda, el panel y los hitos; pasa los eventos de hooks de Claude Code al hook de Python; añade la regla de uso al system prompt |
 
 El mod solo lee fichas: toda escritura pasa por el CLI. El hook nunca bloquea una sesión: cualquier error va a `~/.claude/progress/_hook-errors.log` y la sesión sigue. Nada sale de tu máquina.
+
+### Qué ejecuta, qué lee y qué envía
+
+- **Ejecuta** dos scripts locales de Python desde la carpeta del propio plugin, con argumentos fijos: `bin/progress_hook.py` en los eventos de hooks de Claude Code (mensaje enviado, fin de turno, uso de herramientas, inicio y fin de subagentes, una llamada a Agent a punto de correr), y `bin/progress` cuando pulsas Ocultar, Vaciar, Modo discreto o Ir al chat. Para abrir un chat, `progress chat` ejecuta `open` (macOS) o `xdg-open` (Linux) con un enlace `claude://`.
+- **Lee** las fichas de `~/.claude/progress`, el id y la carpeta de la sesión, los datos de los eventos de hooks (incluida la ruta de la transcripción: el hook la lee para sumar los tokens gastados por paso) y, para Ir al chat en fichas antiguas, la lista de sesiones de la app de escritorio de Claude. No lee credenciales.
+- **No envía nada** por la red. Todo se queda en archivos JSON locales en `~/.claude/progress`.
+- **Cambios en Claude Code:** añade una sección al system prompt (cuándo y cómo seguir un plan), añade a tus mensajes una línea de contexto con el estado de la ficha activa, registra `/progress`, dibuja la banda, el panel y las filas de hitos, y oculta la fila de resultado de los comandos `progress`, que ya enseña el hito. Nunca concede, deniega ni pide un permiso.
 
 ### Reglas que siguen las fichas
 

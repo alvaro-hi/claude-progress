@@ -425,7 +425,7 @@ describe('panel', () => {
   })
 
   test('«Ir al chat»: lo resuelve el CLI; si devuelve un resume, se copia; nunca en este chat', IN_ES, async ($, on) => {
-    const desk = 'local_ea72ffef-0db5-4712-adc8-df118ca3a4a0'
+    const desk = 'local_00000000-0000-4000-8000-000000000001'
     const cli = '460832df-56c9-4b74-aa1b-e720a7e1bc62'
     const { runs, copied } = world(on, filesOf(
       fiche('mio', { owner: SID, ...PLANNED }),

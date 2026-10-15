@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Clean stage for screenshots: hide every live card except the demo, then put them back.
+"""Clean stage for screenshots: hide every live card except the demo ones, then put them back.
 
-  scripts/scene.py hide       hide every card but demo-landing (finished ones too) and remember which
+  scripts/scene.py hide       hide every card but the demo-* ones (finished too) and remember which
   scripts/scene.py restore    unhide exactly those cards, and nothing else
 
 Hiding is the CLI's own `hidden` mark: nothing is moved or deleted. Respects CLAUDE_PROGRESS_DIR.
@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "bin"))
 import progresslib as P  # noqa: E402
 
-DEMO = "demo-landing"
+DEMO = "demo-"  # prefijo de las fichas de scripts/demo.py
 STATE = os.path.join(P.PROGRESS_DIR, "_scene.json")
 
 
@@ -25,7 +25,7 @@ def hide():
     except FileNotFoundError:
         hidden = []
     for d in P.load_all()[0]:
-        if d["id"] == DEMO or d.get("hidden"):
+        if d["id"].startswith(DEMO) or d.get("hidden"):
             continue
         with P.mutate(d["id"]) as f:
             f["hidden"] = True
