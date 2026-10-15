@@ -1,6 +1,6 @@
 {
   "name": "progress-ring",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Progress Ring: know where Claude is in a long plan. A ring above the prompt with %, current step and what's next, a /progress panel with every plan across chats, and milestone rows",
   "author": {
     "name": "Álvaro del Pozo",
