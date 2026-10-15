@@ -20,7 +20,7 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 export function clean(text: unknown, limit = 80): string {
   if (text === null || text === undefined) return ''
   let s = String(text)
-    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ch => (ch === '‍' ? ch : ' '))
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ch => (ch === '\u200D' ? ch : ' '))
     .replace(/\s+/g, ' ')
     .trim()
   if ([...s].length > limit) s = [...s].slice(0, limit - 1).join('').trimEnd() + '…'
@@ -153,7 +153,7 @@ function planTokens(v: unknown): { tokens?: number } {
 export function parseDiscreet(text: string | undefined): boolean {
   if (text === undefined) return false
   try {
-    const cfg: unknown = JSON.parse(text.replace(/^﻿/, ''))
+    const cfg: unknown = JSON.parse(text.replace(/^\uFEFF/, ''))
     return isObj(cfg) ? Boolean(cfg.discreet) : true
   } catch {
     return true

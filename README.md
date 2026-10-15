@@ -52,6 +52,13 @@ Start a new session afterwards. Uninstall with `claude plugin uninstall progress
 
 The mod only reads cards: every write goes through the CLI. The hook never blocks a session: any error is logged to `~/.claude/progress/_hook-errors.log` and the session goes on. Nothing leaves your machine.
 
+### What it runs, reads and sends
+
+- **Runs** two local Python scripts from the plugin's own folder, with fixed arguments: `bin/progress_hook.py` on Claude Code's hook events (prompt sent, turn end, tool use, subagent start and stop, an Agent call about to run), and `bin/progress` when you press Hide, Clear, Discreet mode or Go to chat. To open a chat, `progress chat` runs `open` (macOS) or `xdg-open` (Linux) with a `claude://` link.
+- **Reads** the cards in `~/.claude/progress`, the session's id and folder, the hook events' data (the transcript path included: the hook reads the transcript to add up the tokens spent per step) and, for Go to chat on older cards, the Claude desktop app's session list. It reads no credentials.
+- **Sends** nothing over the network. Everything stays in local JSON files under `~/.claude/progress`.
+- **Changes in Claude Code:** adds one section to the system prompt (when to track a plan and how), adds one context line with the active card's state to your prompts, registers `/progress`, draws the band, the panel and the milestone rows, and hides the result row of `progress` commands, which the milestone row already shows. It never allows, denies or asks for a permission.
+
 ### Rules the cards follow
 
 - The percentage only counts closed steps. A subagent that delivers shows as «to review» and only counts once Claude accepts it.

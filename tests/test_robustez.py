@@ -62,8 +62,8 @@ class R(unittest.TestCase):
         self.assertEqual(r.stdout, "")
 
     def test_compound_emoji_kept(self):  # 5e
-        self.cli("start", "em", "👨‍💻 diseño 🏳️‍🌈", "--total", "1", "--cwd", self.tmp)
-        self.assertIn("👨‍💻", json.load(open(os.path.join(self.dir, "em.json")))["title"])
+        self.cli("start", "em", "\U0001f468\u200d\U0001f4bb diseño \U0001f3f3\ufe0f\u200d\U0001f308", "--total", "1", "--cwd", self.tmp)
+        self.assertIn("\U0001f468\u200d\U0001f4bb", json.load(open(os.path.join(self.dir, "em.json")))["title"])
 
     def test_config_not_dict_is_discreet(self):  # 2j
         self.put("_config", "[]")

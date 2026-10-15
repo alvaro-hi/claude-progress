@@ -63,7 +63,7 @@ def clean(text, limit=MAX_TEXT):
         return ""
     s = str(text)
     # ZWJ y selector de variación se conservan: sin ellos los emoji compuestos se parten
-    s = "".join(ch if ch.isprintable() or ch in "‍️" else " " for ch in s)
+    s = "".join(ch if ch.isprintable() or ch in "\u200d\ufe0f" else " " for ch in s)
     s = s.replace("|", "¦")
     s = re.sub(r"\s+", " ", s).strip()
     if len(s) > limit:

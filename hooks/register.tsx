@@ -146,7 +146,7 @@ async function load($: EngineInterface, t: Dict): Promise<Snap> {
       continue
     }
     try {
-      const d: unknown = JSON.parse(text.replace(/^﻿/, ''))
+      const d: unknown = JSON.parse(text.replace(/^\uFEFF/, ''))
       if (validFiche(d, stem)) snap.fichas.push(toFicha(d, t))
       else snap.bad.push(stem)
     } catch {
@@ -254,19 +254,17 @@ export const register: Register = (on, options) => {
     return r
   }).catch(($, e, next) => next(e))
 
-  // Aquí `e` es solo el envoltorio de la herramienta: el payload clásico se rehace con lo que el hook lee.
-  on('classic.PreToolUse', async ($, e, next) => {
-    if (e.tool === 'Agent') {
-      const { tool, tool_use_id, consent: _consent, ...tool_input } = e as typeof e & { consent?: string }
-      await runHook($, 'PreToolUse', {
-        hook_event_name: 'PreToolUse',
-        session_id: await $.session.id(),
-        cwd: await $.session.cwd(),
-        tool_name: tool,
-        tool_use_id,
-        tool_input,
-      })
-    }
+  // Un agente que arranca abre su fila en la ficha. Va en tool.call, antes de que corra, y no en un hook de
+  // permisos: no decide nada, solo apunta. El payload clásico se rehace con lo que el hook de Python lee.
+  on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
+    await runHook($, 'PreToolUse', {
+      hook_event_name: 'PreToolUse',
+      session_id: await $.session.id(),
+      cwd: await $.session.cwd(),
+      tool_name: 'Agent',
+      tool_use_id: e.tool_use_id,
+      tool_input: { description: e.description, subagent_type: e.subagent_type, run_in_background: e.run_in_background },
+    })
     return next(e)
   }).catch(($, e, next) => next(e))
 
