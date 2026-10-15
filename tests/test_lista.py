@@ -113,23 +113,15 @@ class Lista(unittest.TestCase):
         self.hook("PostToolUse", dict(cmd, session_id="s2"), env=env)
         self.assertEqual(self.fiche()["chat"]["id"], "local_00000000-0000-4000-8000-000000000001")
 
-    def test_chat_target_finds_the_desktop_chat_of_an_old_card(self):
+    def test_chat_target_without_desktop_lookup(self):
         import sys
         sys.path.insert(0, os.path.join(test_hooks.ROOT, "bin"))
         import progresslib as P
-        root = os.path.join(self.tmp, "app"); os.makedirs(os.path.join(root, "cuenta", "org"))
         local, cli = "local_00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"
-        with open(os.path.join(root, "cuenta", "org", local + ".json"), "w") as f:
-            json.dump({"sessionId": local, "cliSessionId": cli}, f)
-        os.environ["CLAUDE_APP_SESSIONS_DIR"] = root
-        try:
-            self.assertEqual(P.chat_target({"owner": cli}), ("desktop", local))
-            other = "11111111-1111-1111-1111-111111111111"
-            self.assertEqual(P.chat_target({"owner": other}), ("cli", other))
-            self.assertEqual(P.chat_target({"chat": {"app": "desktop", "id": local}}), ("desktop", local))
-            self.assertIsNone(P.chat_target({"owner": "x; rm -rf /"}))
-        finally:
-            del os.environ["CLAUDE_APP_SESSIONS_DIR"]
+        self.assertEqual(P.chat_target({"owner": cli}), ("cli", cli))
+        self.assertEqual(P.chat_target({"chat": {"app": "desktop", "id": local}}), ("desktop", local))
+        self.assertEqual(P.chat_target({"chat": {"app": "cli", "id": cli}}), ("cli", cli))
+        self.assertIsNone(P.chat_target({"owner": "x; rm -rf /"}))
 
     def test_hide_refuses_closed(self):
         self.own(); self.cli("done", "f")

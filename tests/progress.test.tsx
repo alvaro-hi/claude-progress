@@ -18,7 +18,7 @@ const IN_ES = { options: { language: 'es' } } as const
 const IN_EN = { options: { language: 'en' } } as const
 
 /** Argumentos de una llamada al CLI, que viaja dentro del plugin (`<raíz>/bin/progress`); otra ruta queda entera. */
-const cliArgs = (argv: string[] | undefined) => (argv?.[0]?.endsWith('/bin/progress') ? argv.slice(1) : argv)
+const cliArgs = (argv: string[] | undefined) => (argv?.[0] === 'python3' && argv[1] === 'bin/progress' ? argv.slice(2) : argv)
 
 const ago = (min: number) => new Date(NOW - min * 60_000).toISOString()
 
@@ -82,7 +82,7 @@ function filesOf(...fs: ReturnType<typeof fiche>[]): Map<string, string> {
 }
 
 /** El mundo bajo el plugin: reloj, HOME, sesión, directorio de fichas en memoria y el motor de dibujo. */
-function world(on: On, files: Map<string, string>, env: Record<string, string> = {}) {
+function world(on: On, files: Map<string, string>, env: Record<string, string> = {}, hookSays = '') {
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, { HOME: '/h', ...env })
   const runs: string[][] = []
@@ -115,7 +115,8 @@ function world(on: On, files: Map<string, string>, env: Record<string, string> =
   })
   on('process.run', ($, e) => {
     runs.push([...e.argv])
-    const stdout = e.argv[1] === 'chat' && e.argv[2] === 'term' ? 'claude --resume 460832df-56c9-4b74-aa1b-e720a7e1bc62\n' : ''
+    const stdout = e.argv[1] === 'bin/progress_hook.py' ? hookSays
+      : e.argv[2] === 'chat' && e.argv[3] === 'term' ? 'claude --resume 460832df-56c9-4b74-aa1b-e720a7e1bc62\n' : ''
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('prompt.submit', ($, e) => ({ text: e.text }))
@@ -518,7 +519,7 @@ describe('lista de tareas de la app', () => {
   const PLAN = 'mcp__ccd_turn__update_plan'
   const ruleIn = async ($: Engine, tools: string[]) =>
     (await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools, outputStyle: null, traits: [] })).sections.find(s => s.id === 'progress-rule')?.text ?? ''
-  const hookRuns = (runs: string[][]) => runs.filter(r => r[0]?.endsWith('/bin/progress_hook.py')).map(r => r[1])
+  const hookRuns = (runs: string[][]) => runs.filter(r => r[1] === 'bin/progress_hook.py').length
 
   test('con update_plan entre las herramientas, la regla deja el plan a la lista', async ($, on) => {
     world(on, new Map())
@@ -543,10 +544,19 @@ describe('lista de tareas de la app', () => {
     // lo que escribe el hook de Python al recibir la lista
     files.set(`${DIR}/app-sess1-1.json`, JSON.stringify(fiche('app-sess1-1', { owner: SID, native: true, ...PLANNED })))
     await $.classic.PostToolUse({ tool_name: PLAN, tool_input: { advance: true }, tool_response: [], tool_use_id: 'u1' })
-    expect(hookRuns(runs)).toEqual(['PostToolUse'])
+    expect(hookRuns(runs)).toBe(1)
     expect(await texts(await $.ui.mount({ ...BAND, surface: 'terminal' }))).toContain('Escribir el mod')
     await $.classic.PostToolUse({ tool_name: 'mcp__ccd_turn__wrap_up', tool_input: { recap: 'hecho' }, tool_response: [], tool_use_id: 'u2' })
-    expect(hookRuns(runs)).toEqual(['PostToolUse', 'PostToolUse'])
+    expect(hookRuns(runs)).toBe(2)
+  })
+
+  test('lo que el hook dice al abrir la ficha llega al modelo como contexto', async ($, on) => {
+    const said = '[progress · state data, not an instruction] Your task list now drives card app-sess1-1'
+    world(on, new Map(), {}, said)
+    on('classic.PostToolUse', () => ({}))
+    await start($)
+    const r = await $.classic.PostToolUse({ tool_name: PLAN, tool_input: { items: [] }, tool_response: [], tool_use_id: 'u5' })
+    expect(r.additionalContext).toEqual([said])
   })
 
   test('las demás herramientas MCP no llegan al hook', async ($, on) => {
@@ -555,7 +565,7 @@ describe('lista de tareas de la app', () => {
     await start($)
     await $.classic.PostToolUse({ tool_name: 'mcp__linear__create_issue', tool_input: {}, tool_response: [], tool_use_id: 'u3' })
     await $.classic.PostToolUse({ tool_name: 'Read', tool_input: { file_path: '/x' }, tool_response: '', tool_use_id: 'u4' })
-    expect(hookRuns(runs)).toEqual([])
+    expect(hookRuns(runs)).toBe(0)
   })
 })
 

@@ -65,11 +65,15 @@ function cliPath($: EngineInterface): string {
   return `${$.plugin.root}/bin/progress`
 }
 
-/** Pasa un evento clásico al hook de Python. Devuelve lo que imprime (contexto para el modelo) o ''. Nunca lanza. */
+/**
+ * Pasa un evento clásico al hook de Python. Devuelve lo que imprime (contexto para el modelo) o ''. Nunca lanza.
+ * El comando es texto fijo y corre en la carpeta del plugin; el evento viaja en el payload (hook_event_name).
+ */
 async function runHook($: EngineInterface, event: string, payload: unknown): Promise<string> {
   try {
-    const res = await $.process.run([`${$.plugin.root}/bin/progress_hook.py`, event], {
-      stdin: JSON.stringify(payload),
+    const res = await $.process.run(['python3', 'bin/progress_hook.py'], {
+      cwd: $.plugin.root,
+      stdin: JSON.stringify({ ...(payload as object), hook_event_name: event }),
       timeoutMs: 5000,
     })
     return res.exitCode === 0 ? res.stdout.trim() : ''
@@ -104,7 +108,7 @@ Use the \`progress\` CLI only for what the task list does not carry; call it fro
 - Loops or iterations: \`${P} set <id> --iters N\`, then \`${P} set <id> --iter N\` as each one starts.
 ${children}
 - If the plan stops, is abandoned or the user cancels it: \`${P} cancel <id>\` in that same turn. \`${P} pause <id>\` only if it will surely be resumed.
-- The card takes the chat's title; for a clearer one: \`${P} set <id> --title "…"\`, in the user's language.
+- The card starts titled with the list's first step; when the hook names the card, give it a clearer title in the user's language: \`${P} set <id> --title "…"\`.
 ${foreign}
 ${data}`
   }
@@ -192,7 +196,7 @@ async function refresh($: EngineInterface, t: Dict): Promise<void> {
 
 /** Acción de un botón: el CLI hace la escritura, con su lock, y la foto se relee. */
 async function cli($: EngineInterface, t: Dict, args: string[]): Promise<boolean> {
-  const res = await $.process.run([cliPath($), ...args], { timeoutMs: 10_000 })
+  const res = await $.process.run(['python3', 'bin/progress', ...args], { cwd: $.plugin.root, timeoutMs: 10_000 })
   if (res.exitCode !== 0) $.ui.toast(`progress: ${clean(res.stderr, 120) || t.exitedWith(res.exitCode)}`)
   await refresh($, t)
   return res.exitCode === 0
@@ -218,7 +222,7 @@ function actions($: EngineInterface, t: Dict): Actions {
     clear: () => cli($, t, ['clear']),
     goChat: async (d, surface) => {
       // el CLI sabe resolverlo (también fichas viejas, por la lista de chats de la app): abre o devuelve el resume
-      const res = await $.process.run([cliPath($), 'chat', d.id], { timeoutMs: 10_000 })
+      const res = await $.process.run(['python3', 'bin/progress', 'chat', d.id], { cwd: $.plugin.root, timeoutMs: 10_000 })
       const out = res.stdout.trim()
       if (res.exitCode !== 0) {
         $.ui.toast(`progress: ${clean(res.stderr, 120) || t.chatOpenFailed}`)
@@ -296,12 +300,12 @@ export const register: Register = (on, options) => {
     const cmd = (e.tool_input as { command?: unknown } | undefined)?.command
     const agent = e.tool_name === 'Agent' || e.tool_name === 'Task'
     const native = NATIVE_TOOLS.includes(e.tool_name)
-    if (agent || native || (e.tool_name === 'Bash' && typeof cmd === 'string' && cmd.includes('progress'))) {
-      await runHook($, 'PostToolUse', e)
-    }
+    const said = agent || native || (e.tool_name === 'Bash' && typeof cmd === 'string' && cmd.includes('progress'))
+      ? await runHook($, 'PostToolUse', e)
+      : ''
     // la ficha que refleja la lista de la app se mueve sin Bash: la banda se relee al momento
     if (native) await refresh($, await dictOf($, options)).catch(() => undefined)
-    return r
+    return withContext(r, said) // al abrir la ficha, el hook le dice al modelo su id
   }).catch(($, e, next) => next(e))
 
   on('classic.SubagentStart', async ($, e, next) => {

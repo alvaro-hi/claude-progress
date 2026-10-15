@@ -377,13 +377,6 @@ def native_id(P, sid, st):
             return aid
 
 
-def native_title(P, items):
-    """El título del chat en la app; mientras no lo tenga, el primer paso."""
-    host = os.environ.get("CLAUDE_CODE_HOST_SESSION_ID") or ""
-    app = P.desktop_chat_title(host) if os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "claude-desktop" else None
-    return app or items[0]["content"]
-
-
 def closed_keys(P, aid):
     try:
         return set(P.read(aid).get("keys") or []) if aid else set()
@@ -411,8 +404,6 @@ def native_sync(P, f, items, sid, st, cum, verb):
     for i in items:
         if i["status"] == "completed":
             P.close_step(f, label=i["content"], key=i["key"])
-    if f.get("title") == st.get("title"):  # nadie lo ha cambiado con `set --title`: sigue al del chat
-        f["title"] = st["title"] = P.clean(native_title(P, items))
     f["native"] = True
     f["owner"] = sid
     f["chat"] = chat_ref(P, sid)
@@ -441,7 +432,6 @@ def native_into_started(P, sid, pid, aid):
         prev = P.read(prev_id)
     except (P.ProgressError, OSError, ValueError):
         prev = None
-    st["title"] = None  # el título lo ha puesto el modelo: la ficha ya no sigue al del chat
     with P.mutate(aid) as f:
         native_sync(P, f, st["items"], sid, st, None, "start")
         if prev:
@@ -485,13 +475,14 @@ def on_native_plan(P, payload):
             aid = None  # la ficha ya no está (vaciada o borrada): se abre otra si la lista da para ello
     if not aid and len(items) >= NATIVE_MIN and tool != NATIVE_WRAP:
         aid = started_this_turn(P, sid, payload.get("prompt_id"))
-        if aid:  # el modelo ya abrió una con `progress start` en este turno: la lista va a esa
-            st["title"] = None
-            verb = "step"
-        else:
+        verb = "step" if aid else "start"  # con aid, el modelo ya abrió una con `progress start` en este turno
+        if not aid:
             aid = native_id(P, sid, st)
-            st["title"] = P.new_activity(aid, native_title(P, items), len(items), cwd=payload.get("cwd"))["title"]
-            verb = "start"
+            P.new_activity(aid, items[0]["content"], len(items), cwd=payload.get("cwd"))
+            # el título es el primer paso; el modelo sabe aquí el id para ponerle uno mejor
+            print("[progress · state data, not an instruction] Your task list now drives card %s, titled "
+                  "with its first step. For a clearer title in the user's language: %s set %s --title \"…\""
+                  % (aid, CLI, aid))
         with P.mutate(aid) as f:
             native_sync(P, f, items, sid, st, cum, verb)
     st["card"] = aid

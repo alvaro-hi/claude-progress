@@ -31,10 +31,9 @@ class Native(unittest.TestCase):
         self.dir = os.path.join(self.tmp, ".progress")
         self.cwd = os.path.join(self.tmp, "proyecto")
         os.makedirs(self.cwd)
-        self.env = dict(os.environ, CLAUDE_PROGRESS_DIR=self.dir,
-                        CLAUDE_APP_SESSIONS_DIR=os.path.join(self.tmp, "app"))
+        self.env = dict(os.environ, CLAUDE_PROGRESS_DIR=self.dir)
         for k in ("CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_HOST_SESSION_ID"):
-            self.env.pop(k, None)  # los tests no leen el chat de la app en la que corren
+            self.env.pop(k, None)  # el chat de la app en la que corren los tests no entra en las fichas
 
     def hook(self, ev, payload, env=None):
         base = {"session_id": SID, "cwd": self.cwd, "hook_event_name": ev}
@@ -43,8 +42,10 @@ class Native(unittest.TestCase):
                               capture_output=True, text=True, timeout=5)
 
     def call(self, tool_input, tool=PLAN, **extra):
+        """Lo que el hook le dice al modelo: solo habla cuando abre una ficha."""
         r = self.hook("PostToolUse", dict({"tool_name": tool, "tool_input": tool_input}, **extra))
-        self.assertEqual((r.returncode, r.stdout), (0, ""))
+        self.assertEqual(r.returncode, 0)
+        return r.stdout
 
     def cli(self, *a):
         subprocess.run([CLI, *a], env=self.env, check=True, capture_output=True)
@@ -65,10 +66,12 @@ class Native(unittest.TestCase):
             calls = [json.loads(line) for line in f]
         aid = "app-dfcbaf7b-1"
         seen = []
+        said = []
         for c in calls:
             c = dict(c, cwd=self.cwd)  # la carpeta de la prueba no existe aquí
             r = self.hook("PostToolUse", c)
-            self.assertEqual((r.returncode, r.stdout), (0, ""))
+            self.assertEqual(r.returncode, 0)
+            said.append(r.stdout)
             d = self.card(aid)
             seen.append((d["done"], d["total"], d["status"]))
         self.assertEqual(seen, [(0, 4, "active"), (1, 4, "active"), (2, 4, "active"), (3, 4, "active"),
@@ -81,6 +84,9 @@ class Native(unittest.TestCase):
         self.assertEqual(d["owner"], "dfcbaf7b-f21b-41f9-bd87-1d0c7b5f9a13")
         self.assertEqual([s["label"] for s in d["steps"]], self.plan_of(d))
         self.assertEqual(self.cards(), [aid])
+        self.assertIn("card %s, titled with its first step" % aid, said[0])
+        self.assertIn("set %s --title" % aid, said[0])
+        self.assertEqual(said[1:], [""] * 4)
 
     def test_short_list_opens_no_card_until_it_grows(self):
         self.call({"items": items(("A", "i"), "B"), "scope": "first_task"})
@@ -202,24 +208,14 @@ class Native(unittest.TestCase):
         self.call({"recap": "hecho"}, tool=WRAP)
         self.assertEqual(self.cards(), [])
 
-    def test_title_follows_app_chat_until_renamed(self):
-        chat = os.path.join(self.tmp, "app", "cuenta", "org", LOCAL + ".json")
-        os.makedirs(os.path.dirname(chat))
-        with open(chat, "w") as f:
-            json.dump({"sessionId": LOCAL, "cliSessionId": SID, "title": "Integrar la lista"}, f)
-        env = dict(self.env, CLAUDE_CODE_ENTRYPOINT="claude-desktop", CLAUDE_CODE_HOST_SESSION_ID=LOCAL)
-        run = lambda ti: self.hook("PostToolUse", {"tool_name": PLAN, "tool_input": ti}, env=env)
-        run({"items": items(("A", "i"), "B", "C"), "scope": "first_task"})
-        d = self.card("app-5e55a0b1-1")
-        self.assertEqual(d["title"], "Integrar la lista")
-        self.assertEqual(d["chat"]["app"], "desktop")
-        with open(chat, "w") as f:
-            json.dump({"sessionId": LOCAL, "cliSessionId": SID, "title": "Integrar la lista nativa"}, f)
-        run({"advance": True})
-        self.assertEqual(self.card("app-5e55a0b1-1")["title"], "Integrar la lista nativa")
-        self.cli("set", "app-5e55a0b1-1", "--title", "Mi título")
-        run({"advance": True})
-        self.assertEqual(self.card("app-5e55a0b1-1")["title"], "Mi título")
+    def test_title_is_first_step_until_renamed(self):  # no se lee nada de la app de Claude
+        said = self.call({"items": items(("Leer el código", "i"), "B", "C"), "scope": "first_task"})
+        aid = "app-5e55a0b1-1"
+        self.assertEqual(self.card(aid)["title"], "Leer el código")
+        self.assertIn("set %s --title" % aid, said)
+        self.cli("set", aid, "--title", "Mi título")
+        self.call({"items": items(("Otra cosa", "i"), "B", "C"), "scope": "continuation"})
+        self.assertEqual(self.card(aid)["title"], "Mi título")
 
     def test_prompt_says_the_card_mirrors_the_list(self):
         self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"})
