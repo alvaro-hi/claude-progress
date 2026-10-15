@@ -142,14 +142,14 @@ const start = ($: Engine) => $.session.start({ cwd: '/proj/sub', surface: 'termi
 const submit = ($: Engine) => $.prompt.submit({ text: 'siguiente', wait: false, origin: { kind: 'composer' } })
 
 const BAND = {
-  plugin: 'progress',
+  plugin: 'progress-ring',
   component: 'AbovePrompt',
   props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} },
 } as const
 const WORKING = { ...BAND, props: { ...BAND.props, isWorking: true } } as const
 
 const PANE = {
-  plugin: 'progress',
+  plugin: 'progress-ring',
   component: 'Pane',
   requestId: 'progress',
   props: { title: 'Progreso', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
@@ -158,7 +158,7 @@ const PANE = {
 const out = (stdout: string) => ({ stdout, stderr: '', interrupted: false })
 const toolUse = (command: string, stdout: string) =>
   ({
-    plugin: 'progress',
+    plugin: 'progress-ring',
     component: 'ToolUse',
     requestId: 't1',
     props: { tool_use_id: 't1', tool: 'Bash', input: { command }, isRunning: false, isErrored: false, isInterrupted: false, output: out(stdout) },
@@ -488,7 +488,7 @@ describe('hitos en la conversación', () => {
     await start($)
     expect(await texts(await $.ui.mount({ ...toolUse('ls -la', 'total 0'), surface: 'terminal' }))).toBe('engine')
     const result = (stdout: string) =>
-      ({ plugin: 'progress', component: 'ToolResult', props: { tool_use_id: 't1', tool: 'Bash', output: out(stdout), isErrored: false } }) as const
+      ({ plugin: 'progress-ring', component: 'ToolResult', props: { tool_use_id: 't1', tool: 'Bash', output: out(stdout), isErrored: false } }) as const
     expect(await texts(await $.ui.mount({ ...result('mio · 1/4 · 25%\n'), surface: 'terminal' }))).toBe('')
     expect(await texts(await $.ui.mount({ ...result('otra cosa'), surface: 'terminal' }))).toBe('engine')
   })
@@ -498,7 +498,7 @@ describe('hitos en la conversación', () => {
     await start($)
     const call = (id: string, tool: string, input: unknown, stdout: string) => ({ tool_use_id: id, tool, input, isRunning: false, isErrored: false, isInterrupted: false, output: out(stdout) })
     const ui = await $.ui.mount({
-      plugin: 'progress',
+      plugin: 'progress-ring',
       surface: 'desktop',
       component: 'ToolGroup',
       props: {

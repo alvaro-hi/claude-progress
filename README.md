@@ -1,11 +1,11 @@
-# claude-progress
+# Progress Ring
 
 **English** · [Español](README.es.md)
 
 See how far along Claude Code is in a long plan, without reading the transcript. When Claude starts a plan with three or more steps, it opens a progress card and closes each step as it finishes. You see it:
 
 - **Band** above the prompt (terminal and desktop): a ring with the percentage, the current step, the plan, and whether Claude is working, waiting for you or stalled.
-- **`/progress` panel** (every surface, mobile included): every plan in this chat and in other chats, with their steps, subagents waiting for review, and a button to jump to the chat that owns each plan.
+- **`/progress` panel**: every plan in this chat and in other chats, with their steps, subagents waiting for review, and a button to jump to the chat that owns each plan.
 - **Milestones** in the conversation: the command that closes a step is drawn as «Now: X · ✓ what was closed · N/M».
 
 You don't have to tell Claude to use it: the plugin teaches it when to open a card, close steps, accept subagent work and finish.
@@ -15,20 +15,20 @@ You don't have to tell Claude to use it: the plugin teaches it when to open a ca
 At the prompt of a Claude Code session:
 
 ```
-/plugin install progress --marketplace alvaro-hi/claude-progress
+/plugin install progress-ring --marketplace alvaro-hi/progress-ring
 ```
 
 Answer `y` to add the marketplace and pick the user scope. Or from a shell:
 
 ```bash
-claude plugin marketplace add alvaro-hi/claude-progress
+claude plugin marketplace add alvaro-hi/progress-ring
 ```
 
 ```bash
-claude plugin install progress@claude-progress --scope user
+claude plugin install progress-ring@progress-ring --scope user
 ```
 
-Start a new session afterwards. Uninstall with `claude plugin uninstall progress@claude-progress`.
+Start a new session afterwards. Uninstall with `claude plugin uninstall progress-ring@progress-ring`.
 
 **Requirements:** a Claude Code build with mods (hooks modules), tested on 2.1.287; macOS or Linux; `python3` 3.9 or later on the `PATH`.
 
@@ -57,7 +57,7 @@ The mod only reads cards: every write goes through the CLI. The hook never block
 Claude calls the CLI with its full path. To use it from your own shell:
 
 ```bash
-alias progress="$(ls -dt ~/.claude/plugins/cache/claude-progress/progress/*/ | head -1)bin/progress"
+alias progress="$(ls -dt ~/.claude/plugins/cache/progress-ring/progress-ring/*/ | head -1)bin/progress"
 ```
 
 ```bash
@@ -89,8 +89,10 @@ claude plugin test .
 claude plugin validate .claude-plugin/plugin.json
 ```
 
+`scripts/demo.py` runs a demo plan that moves on its own (for screenshots); `--clean` removes it.
+
 To try local changes, add the repo folder as a marketplace (`claude plugin marketplace add .`) and install from it: Claude Code then reads the plugin straight from the folder and `/reload-plugins` picks up edits.
 
 ## Credits
 
-Made by [Álvaro del Pozo](https://www.linkedin.com/in/alvaro-hiexperience/). MIT license.
+Designed by [Álvaro del Pozo](https://www.linkedin.com/in/alvaro-hiexperience/). MIT license. Not affiliated with Anthropic; "Claude" and "Claude Code" are trademarks of Anthropic.

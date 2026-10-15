@@ -27,13 +27,13 @@ const POLL_MS = 5000
 const TURN_MAX_S = 3 * 3600 // un turno sin fin más largo que esto es una sesión que se cerró a medias
 
 // El estado del mod. Se declara aquí: el validador solo lee átomos escritos en este archivo.
-const snapAtom = atom({ plugin: 'progress', key: 'snap' } as const, null)
-const openAtom = atom({ plugin: 'progress', key: 'open' } as const, []) // fichas desplegadas en el panel
-const fullAtom = atom({ plugin: 'progress', key: 'full' } as const, []) // fichas con la ventana abierta
-const pinnedAtom = atom({ plugin: 'progress', key: 'pinned' } as const, false) // banda fijada
-const groupsAtom = atom({ plugin: 'progress', key: 'groups' } as const, []) // grupos desplegados desde un hito
-const closingAtom = atom({ plugin: 'progress', key: 'closing' } as const, null) // ficha recién terminada
-const localeAtom = atom({ plugin: 'progress', key: 'locale' } as const, null) // locale del entorno, leído una vez
+const snapAtom = atom({ plugin: 'progress-ring', key: 'snap' } as const, null)
+const openAtom = atom({ plugin: 'progress-ring', key: 'open' } as const, []) // fichas desplegadas en el panel
+const fullAtom = atom({ plugin: 'progress-ring', key: 'full' } as const, []) // fichas con la ventana abierta
+const pinnedAtom = atom({ plugin: 'progress-ring', key: 'pinned' } as const, false) // banda fijada
+const groupsAtom = atom({ plugin: 'progress-ring', key: 'groups' } as const, []) // grupos desplegados desde un hito
+const closingAtom = atom({ plugin: 'progress-ring', key: 'closing' } as const, null) // ficha recién terminada
+const localeAtom = atom({ plugin: 'progress-ring', key: 'locale' } as const, null) // locale del entorno, leído una vez
 
 async function home($: EngineInterface): Promise<string> {
   return (await $.env.get('HOME')) ?? ''
@@ -85,9 +85,9 @@ function withContext<R extends { additionalContext?: string[] }>(r: R, text: str
 /** Cuándo y cómo usar el CLI: la regla que antes vivía en el CLAUDE.md del usuario. */
 function rule(cliFile: string): string {
   const P = /\s/.test(cliFile) ? `"${cliFile}"` : cliFile
-  return `# Visible progress for long plans (progress plugin)
+  return `# Visible progress for long plans (Progress Ring plugin)
 
-The user follows your long plans as progress cards: a band above the prompt, the /progress panel and milestone rows in the chat (also on mobile). Cards are driven by the \`progress\` CLI; call it from Bash with its full path: ${P}
+The user follows your long plans as progress cards: a band above the prompt, the /progress panel and milestone rows in the chat. Cards are driven by the \`progress\` CLI; call it from Bash with its full path: ${P}
 
 - Use it for any plan with 3 or more steps, or with loops/iterations. Skip it for quick one- or two-step tasks.
 - When the plan is approved (or you start executing it): \`${P} start <id> "Title" --total N [--iters N]\` (short lowercase id such as \`auth-refactor\`; add \`--cwd <dir>\` if the work lives in another folder), then \`${P} plan <id> key="Step" other="Step" …\` with the plan's steps.

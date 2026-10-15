@@ -1,18 +1,20 @@
 {
-  "name": "progress",
-  "version": "1.0.1",
-  "description": "Visible progress for Claude Code's long plans: a band above the prompt, a /progress panel and milestone rows, on desktop, terminal and mobile",
+  "name": "progress-ring",
+  "version": "1.1.0",
+  "description": "Progress Ring: know where Claude is in a long plan. A ring above the prompt with %, current step and what's next, a /progress panel with every plan across chats, and milestone rows",
   "author": {
     "name": "Álvaro del Pozo",
     "url": "https://www.linkedin.com/in/alvaro-hiexperience/"
   },
-  "homepage": "https://github.com/alvaro-hi/claude-progress",
-  "repository": "https://github.com/alvaro-hi/claude-progress",
+  "homepage": "https://github.com/alvaro-hi/progress-ring",
+  "repository": "https://github.com/alvaro-hi/progress-ring",
   "license": "MIT",
   "keywords": [
     "progress",
-    "plans",
+    "plan",
+    "todo",
     "subagents",
+    "statusline",
     "mod"
   ],
   "userConfig": {

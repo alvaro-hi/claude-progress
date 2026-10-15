@@ -1,6 +1,14 @@
 {
-  "name": "claude-progress",
-  "owner": { "name": "Álvaro del Pozo", "url": "https://www.linkedin.com/in/alvaro-hiexperience/" },
-  "description": "Visible progress for Claude Code's long plans",
-  "plugins": [{ "name": "progress", "source": "./" }]
+  "name": "progress-ring",
+  "owner": {
+    "name": "Álvaro del Pozo",
+    "url": "https://www.linkedin.com/in/alvaro-hiexperience/"
+  },
+  "description": "Progress Ring: visible progress for Claude Code's long plans",
+  "plugins": [
+    {
+      "name": "progress-ring",
+      "source": "./"
+    }
+  ]
 }

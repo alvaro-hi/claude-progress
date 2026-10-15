@@ -54,7 +54,7 @@ export type Snap = {
 
 declare module 'claude-code' {
   interface PluginState {
-    progress: {
+    'progress-ring': {
       snap: Snap | null
       /** fichas desplegadas en el panel */
       open: string[]
