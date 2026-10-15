@@ -205,6 +205,50 @@ class Native(unittest.TestCase):
         self.assertIn("mirrors your task list", r.stdout)
         self.assertNotIn("To close a step", r.stdout)
 
+    # ── F3: una sola ficha cuando el modelo también usa `progress start` ──
+
+    def start(self, aid, prompt_id, title="Mi plan"):
+        """El modelo abre una ficha con el CLI y el hook ve su Bash (PostToolUse) en el turno prompt_id."""
+        self.cli("start", aid, title, "--total", "3", "--cwd", self.cwd)
+        self.hook("PostToolUse", {"tool_name": "Bash", "prompt_id": prompt_id,
+                                  "tool_input": {"command": '~/.claude/bin/progress start %s "%s" --total 3' % (aid, title)}})
+
+    def test_start_then_list_uses_that_card(self):
+        self.start("mi-plan", "p1")
+        self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"}, prompt_id="p1")
+        self.assertEqual(self.cards(), ["mi-plan"])
+        d = self.card("mi-plan")
+        self.assertEqual((d["title"], self.plan_of(d), d["native"]), ("Mi plan", ["A", "B", "C"], True))
+        self.call({"advance": True}, prompt_id="p1")
+        self.assertEqual(self.card("mi-plan")["done"], 1)
+
+    def test_list_then_start_moves_the_list(self):
+        self.call({"items": items(("A", "c"), ("B", "i"), "C"), "scope": "first_task"}, prompt_id="p1")
+        self.hook("PreToolUse", {"tool_name": "Agent", "tool_use_id": "toolu_9",
+                                 "tool_input": {"description": "revisar", "run_in_background": True}})
+        self.start("mi-plan", "p1")
+        self.assertEqual(self.cards(), ["mi-plan"])
+        archived = os.listdir(os.path.join(self.dir, "_done"))
+        self.assertEqual([n.startswith("app-5e55a0b1-1-") for n in archived], [True])
+        d = self.card("mi-plan")
+        self.assertEqual((d["title"], self.plan_of(d), d["done"]), ("Mi plan", ["A", "B", "C"], 1))
+        self.assertEqual([c["label"] for c in d["children"].values()], ["revisar"])
+        self.call({"advance": True}, prompt_id="p1")
+        self.assertEqual(self.card("mi-plan")["done"], 2)
+        self.assertEqual(self.cards(), ["mi-plan"])
+
+    def test_start_from_another_turn_is_left_alone(self):
+        self.start("viejo", "p0", title="Plan viejo")
+        self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"}, prompt_id="p1")
+        self.assertEqual(self.cards(), ["app-5e55a0b1-1", "viejo"])
+        self.assertNotIn("native", self.card("viejo"))
+        self.start("otro", "p2")  # la lista era de p1: tampoco se mueve
+        self.assertEqual(self.cards(), ["app-5e55a0b1-1", "otro", "viejo"])
+
+    def test_terminal_start_writes_no_native_state(self):
+        self.start("mi-plan", "p1")
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "_native")))
+
     def test_other_sessions_lists_stay_apart(self):
         self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"})
         self.call({"items": items(("X", "i"), "Y", "Z"), "scope": "first_task"},

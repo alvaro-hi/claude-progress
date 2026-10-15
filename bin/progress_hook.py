@@ -108,10 +108,14 @@ def on_post_bash(P, payload):
             with P.mutate(aid) as f:
                 f["owner"] = sid
                 f["chat"] = chat_ref(P, sid)
+                if verb == "start" and payload.get("prompt_id"):
+                    f["prompt"] = payload["prompt_id"]  # el turno que la abrió: la lista de la app lo busca
                 if cum is not None:
                     P.mark_tokens(f, sid, cum, verb)
         except P.ProgressError:
-            pass
+            continue
+        if verb == "start":
+            native_into_started(P, sid, payload.get("prompt_id"), aid)
 
 
 def on_prompt(P, payload):
@@ -283,10 +287,11 @@ NATIVE_MIN = 3  # el umbral de la regla: solo los planes de 3 pasos o más abren
 NATIVE_STATES = ("pending", "in_progress", "completed")
 
 
-def native_file(P, sid):
-    P.ensure_dir()
+def native_file(P, sid, create=True):
     d = os.path.join(P.PROGRESS_DIR, "_native")
-    os.makedirs(d, exist_ok=True)
+    if create:
+        P.ensure_dir()
+        os.makedirs(d, exist_ok=True)
     safe = "".join(c for c in sid if c.isalnum() or c == "-")[:64]
     return os.path.join(d, safe + ".json")
 
@@ -415,6 +420,38 @@ def native_sync(P, f, items, sid, st, cum, verb):
         P.mark_tokens(f, sid, cum, verb)
 
 
+def started_this_turn(P, sid, pid):
+    """La ficha que el modelo abrió con `progress start` en este mismo turno, si la hay."""
+    if not pid:
+        return None
+    found = [d for d in P.load_all()[0] if d.get("owner") == sid and d.get("status") == "active"
+             and not d.get("native") and d.get("prompt") == pid]
+    return max(found, key=lambda d: P.parse_iso(d.get("updated")))["id"] if found else None
+
+
+def native_into_started(P, sid, pid, aid):
+    """`progress start` llega después de la lista, en el mismo turno: la lista pasa a esa ficha (con sus
+    subagentes) y la que abrió el hook se archiva en _done/, sin borrarse. Así no quedan dos fichas."""
+    nf = native_file(P, sid, create=False)
+    st = read_json(nf)
+    prev_id = st.get("card")
+    if not pid or st.get("prompt") != pid or not prev_id or prev_id == aid or not st.get("items"):
+        return
+    try:
+        prev = P.read(prev_id)
+    except (P.ProgressError, OSError, ValueError):
+        prev = None
+    st["title"] = None  # el título lo ha puesto el modelo: la ficha ya no sigue al del chat
+    with P.mutate(aid) as f:
+        native_sync(P, f, st["items"], sid, st, None, "start")
+        if prev:
+            f.setdefault("children", {}).update(prev.get("children") or {})
+    if prev and prev.get("native"):
+        P._archive(prev)
+    st["card"] = aid
+    write_json(nf, st)
+
+
 def on_native_plan(P, payload):
     """Refleja en una ficha cada llamada a update_plan o wrap_up de la sesión."""
     sid, ti, tool = payload.get("session_id"), payload.get("tool_input"), payload.get("tool_name")
@@ -438,6 +475,7 @@ def on_native_plan(P, payload):
     else:
         items = native_step(P, old, ti)
     st["items"] = items
+    st["prompt"] = payload.get("prompt_id")
     cum = P.session_tokens(payload.get("transcript_path")) if items else None
     if aid and items:
         try:
@@ -446,10 +484,16 @@ def on_native_plan(P, payload):
         except P.ProgressError:
             aid = None  # la ficha ya no está (vaciada o borrada): se abre otra si la lista da para ello
     if not aid and len(items) >= NATIVE_MIN and tool != NATIVE_WRAP:
-        aid = native_id(P, sid, st)
-        st["title"] = P.new_activity(aid, native_title(P, items), len(items), cwd=payload.get("cwd"))["title"]
+        aid = started_this_turn(P, sid, payload.get("prompt_id"))
+        if aid:  # el modelo ya abrió una con `progress start` en este turno: la lista va a esa
+            st["title"] = None
+            verb = "step"
+        else:
+            aid = native_id(P, sid, st)
+            st["title"] = P.new_activity(aid, native_title(P, items), len(items), cwd=payload.get("cwd"))["title"]
+            verb = "start"
         with P.mutate(aid) as f:
-            native_sync(P, f, items, sid, st, cum, "start")
+            native_sync(P, f, items, sid, st, cum, verb)
     st["card"] = aid
     write_json(nf, st)
     if tool == NATIVE_WRAP and aid:
