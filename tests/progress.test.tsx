@@ -514,6 +514,50 @@ describe('hitos en la conversación', () => {
   })
 })
 
+describe('lista de tareas de la app', () => {
+  const PLAN = 'mcp__ccd_turn__update_plan'
+  const ruleIn = async ($: Engine, tools: string[]) =>
+    (await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools, outputStyle: null, traits: [] })).sections.find(s => s.id === 'progress-rule')?.text ?? ''
+  const hookRuns = (runs: string[][]) => runs.filter(r => r[0]?.endsWith('/bin/progress_hook.py')).map(r => r[1])
+
+  test('con update_plan entre las herramientas, la regla deja el plan a la lista', async ($, on) => {
+    world(on, new Map())
+    on('prompt.compose', () => ({ sections: [] }))
+    await start($)
+    const app = await ruleIn($, ['Bash', PLAN, 'mcp__ccd_turn__wrap_up'])
+    expect(app).toContain('your task list already drives the card')
+    expect(app).toContain('child accept <id> <cid>')
+    expect(app).not.toContain('Close each step')
+    const terminal = await ruleIn($, ['Bash', 'Read'])
+    expect(terminal).toContain('Close each step when it is finished')
+    expect(terminal).not.toContain('task list already')
+  })
+
+  test('update_plan y wrap_up pasan al hook y la banda se relee sin esperar al sondeo', IN_ES, async ($, on) => {
+    const files = new Map<string, string>()
+    const { runs } = world(on, files)
+    on('classic.PostToolUse', () => ({}))
+    await start($)
+    expect(await texts(await $.ui.mount({ ...BAND, surface: 'terminal' }))).toBe('engine')
+    // lo que escribe el hook de Python al recibir la lista
+    files.set(`${DIR}/app-sess1-1.json`, JSON.stringify(fiche('app-sess1-1', { owner: SID, native: true, ...PLANNED })))
+    await $.classic.PostToolUse({ tool_name: PLAN, tool_input: { advance: true }, tool_response: [], tool_use_id: 'u1' })
+    expect(hookRuns(runs)).toEqual(['PostToolUse'])
+    expect(await texts(await $.ui.mount({ ...BAND, surface: 'terminal' }))).toContain('Escribir el mod')
+    await $.classic.PostToolUse({ tool_name: 'mcp__ccd_turn__wrap_up', tool_input: { recap: 'hecho' }, tool_response: [], tool_use_id: 'u2' })
+    expect(hookRuns(runs)).toEqual(['PostToolUse', 'PostToolUse'])
+  })
+
+  test('las demás herramientas MCP no llegan al hook', async ($, on) => {
+    const { runs } = world(on, new Map())
+    on('classic.PostToolUse', () => ({}))
+    await start($)
+    await $.classic.PostToolUse({ tool_name: 'mcp__linear__create_issue', tool_input: {}, tool_response: [], tool_use_id: 'u3' })
+    await $.classic.PostToolUse({ tool_name: 'Read', tool_input: { file_path: '/x' }, tool_response: '', tool_use_id: 'u4' })
+    expect(hookRuns(runs)).toEqual([])
+  })
+})
+
 describe('idioma', () => {
   test('pickLang: el ajuste manda; en auto, es* del entorno → español, lo demás → inglés', () => {
     expect(pickLang('es', 'en_US.UTF-8')).toBe('es')
