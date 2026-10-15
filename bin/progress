@@ -109,7 +109,8 @@ def cmd_child(a):
                 c["state"] = "rejected"  # descartado: ni vuelve a encargarse ni suma paso
             elif a.action == "accept":
                 c["state"] = "accepted"
-                P.close_step(d, a.label or c.get("label"), key="child:" + cid)
+                if not d.get("native"):  # en la ficha que refleja la lista de la app, el paso ya lo cuenta la lista
+                    P.close_step(d, a.label or c.get("label"), key="child:" + cid)
             c["updated"] = t
     print("%s · child %s: %s" % (summary(d), cid, ch[cid]["state"]))
 

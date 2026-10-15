@@ -164,6 +164,29 @@ class Native(unittest.TestCase):
         self.assertEqual((d["done"], d["total"], d["status"]), (3, 3, "active"))
         self.assertEqual([c["label"] for c in d["children"].values()], ["revisar"])
 
+    def test_child_accept_adds_no_step_on_mirror_card(self):  # hallazgo de F4: 5/5 en vez de 4/4
+        self.call({"items": items(("A", "c"), ("Subagente lee b", "i"), "C", "D"), "scope": "first_task"})
+        self.hook("PreToolUse", {"tool_name": "Agent", "tool_use_id": "toolu_7",
+                                 "tool_input": {"description": "leer b", "run_in_background": False}})
+        self.hook("PostToolUse", {"tool_name": "Agent", "tool_use_id": "toolu_7", "tool_input": {}})
+        aid = "app-5e55a0b1-1"
+        cid = next(iter(self.card(aid)["children"]))
+        self.cli("child", "accept", aid, cid)
+        d = self.card(aid)
+        self.assertEqual(d["children"][cid]["state"], "accepted")
+        self.assertEqual((d["done"], d["total"]), (1, 4))
+        self.assertNotIn("child:" + cid, d["keys"])
+        self.call({"advance": True})
+        self.call({"recap": "hecho"}, tool=WRAP)
+        d = self.card(aid)
+        self.assertEqual((d["done"], d["total"], d["status"]), (4, 4, "done"))
+
+    def test_child_accept_still_counts_on_cli_card(self):
+        self.cli("start", "cli", "Plan del CLI", "--total", "3", "--cwd", self.cwd)
+        self.cli("child", "add", "cli", "k1", "revisar")
+        self.cli("child", "accept", "cli", "k1")
+        self.assertEqual(self.card("cli")["done"], 1)
+
     def test_subagent_and_unknown_shapes_are_ignored(self):
         self.call({"items": items(("A", "i"), "B", "C"), "scope": "first_task"}, agent_id="agent-1")
         self.assertEqual(self.cards(), [])

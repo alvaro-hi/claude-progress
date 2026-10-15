@@ -526,10 +526,11 @@ describe('lista de tareas de la app', () => {
     await start($)
     const app = await ruleIn($, ['Bash', PLAN, 'mcp__ccd_turn__wrap_up'])
     expect(app).toContain('your task list already drives the card')
-    expect(app).toContain('child accept <id> <cid>')
+    expect(app).toContain('child accept <id> <cid>` (no extra step: your task list already counts that work)')
     expect(app).not.toContain('Close each step')
     const terminal = await ruleIn($, ['Bash', 'Read'])
     expect(terminal).toContain('Close each step when it is finished')
+    expect(terminal).toContain('child accept <id> <cid>` (counts a step)')
     expect(terminal).not.toContain('task list already')
   })
 
