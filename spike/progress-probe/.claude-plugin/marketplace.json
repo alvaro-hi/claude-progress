@@ -1,0 +1,1 @@
+{ "name": "progress-probe", "owner": { "name": "Álvaro del Pozo" }, "plugins": [{ "name": "progress-probe", "source": "./" }] }

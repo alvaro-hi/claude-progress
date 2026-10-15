@@ -1,0 +1,9 @@
+{
+  "event": "session.start",
+  "at": 1792088290555,
+  "data": {
+    "surfaces": [],
+    "ccdTools": [],
+    "toolCount": 38
+  }
+}
