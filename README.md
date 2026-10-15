@@ -2,6 +2,8 @@
 
 **English** · [Español](README.es.md)
 
+![A plan moving through its steps in the band above the prompt](docs/media/demo.gif)
+
 See how far along Claude Code is in a long plan, without reading the transcript. When Claude starts a plan with three or more steps, it opens a progress card and closes each step as it finishes. You see it:
 
 - **Band** above the prompt (terminal and desktop): a ring with the percentage, the current step, the plan, and whether Claude is working, waiting for you or stalled.
@@ -9,6 +11,12 @@ See how far along Claude Code is in a long plan, without reading the transcript.
 - **Milestones** in the conversation: the command that closes a step is drawn as «Now: X · ✓ what was closed · N/M».
 
 You don't have to tell Claude to use it: the plugin teaches it when to open a card, close steps, accept subagent work and finish.
+
+![The band opened: done steps, the current one with its agent, and what's next](docs/media/band-desktop-open.png)
+
+![The /progress panel: plans in this chat, in other chats, and finished today](docs/media/panel-desktop.png)
+
+*Screenshots use demo data (`scripts/demo.py`).*
 
 ## Install
 

@@ -2,6 +2,8 @@
 
 [English](README.md) · **Español**
 
+![Un plan avanzando por sus pasos en la banda sobre el prompt](docs/media/demo.gif)
+
 Ve por dónde va Claude Code en un plan largo sin leerte la conversación. Cuando Claude arranca un plan de tres o más pasos, abre una ficha de progreso y cierra cada paso al terminarlo. Lo ves en:
 
 - **Banda** sobre el prompt (terminal y escritorio): anillo con el porcentaje, el paso actual, el plan y si Claude está trabajando, esperando tu respuesta o parado.
@@ -9,6 +11,12 @@ Ve por dónde va Claude Code en un plan largo sin leerte la conversación. Cuand
 - **Hitos** en la conversación: el comando que cierra un paso se dibuja como «Ahora: X · ✓ lo cerrado · N/M».
 
 No hace falta decirle a Claude que lo use: el plugin le enseña cuándo abrir una ficha, cerrar pasos, aceptar el trabajo de los subagentes y terminar.
+
+![La banda desplegada: pasos hechos, el actual con su agente y lo que viene](docs/media/band-desktop-open.png)
+
+![El panel /progress: planes de este chat, de otros chats y terminados hoy](docs/media/panel-desktop.png)
+
+*Las capturas usan datos de demo (`scripts/demo.py`) y la interfaz en inglés.*
 
 ## Instalar
 
