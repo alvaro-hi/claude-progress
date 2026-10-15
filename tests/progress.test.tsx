@@ -18,7 +18,7 @@ const IN_ES = { options: { language: 'es' } } as const
 const IN_EN = { options: { language: 'en' } } as const
 
 /** Argumentos de una llamada al CLI, que viaja dentro del plugin (`<raíz>/bin/progress`); otra ruta queda entera. */
-const cliArgs = (argv: string[] | undefined) => (argv?.[0]?.endsWith('/bin/progress') ? argv.slice(1) : argv)
+const cliArgs = (argv: string[] | undefined) => (argv?.[0] === 'python3' && argv[1] === 'bin/progress' ? argv.slice(2) : argv)
 
 const ago = (min: number) => new Date(NOW - min * 60_000).toISOString()
 
@@ -115,7 +115,7 @@ function world(on: On, files: Map<string, string>, env: Record<string, string> =
   })
   on('process.run', ($, e) => {
     runs.push([...e.argv])
-    const stdout = e.argv[1] === 'chat' && e.argv[2] === 'term' ? 'claude --resume 460832df-56c9-4b74-aa1b-e720a7e1bc62\n' : ''
+    const stdout = e.argv[2] === 'chat' && e.argv[3] === 'term' ? 'claude --resume 460832df-56c9-4b74-aa1b-e720a7e1bc62\n' : ''
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('prompt.submit', ($, e) => ({ text: e.text }))

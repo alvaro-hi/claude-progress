@@ -65,11 +65,15 @@ function cliPath($: EngineInterface): string {
   return `${$.plugin.root}/bin/progress`
 }
 
-/** Pasa un evento clásico al hook de Python. Devuelve lo que imprime (contexto para el modelo) o ''. Nunca lanza. */
+/**
+ * Pasa un evento clásico al hook de Python. Devuelve lo que imprime (contexto para el modelo) o ''. Nunca lanza.
+ * El comando es texto fijo y corre en la carpeta del plugin; el evento viaja en el payload (hook_event_name).
+ */
 async function runHook($: EngineInterface, event: string, payload: unknown): Promise<string> {
   try {
-    const res = await $.process.run([`${$.plugin.root}/bin/progress_hook.py`, event], {
-      stdin: JSON.stringify(payload),
+    const res = await $.process.run(['python3', 'bin/progress_hook.py'], {
+      cwd: $.plugin.root,
+      stdin: JSON.stringify({ ...(payload as object), hook_event_name: event }),
       timeoutMs: 5000,
     })
     return res.exitCode === 0 ? res.stdout.trim() : ''
@@ -169,7 +173,7 @@ async function refresh($: EngineInterface, t: Dict): Promise<void> {
 
 /** Acción de un botón: el CLI hace la escritura, con su lock, y la foto se relee. */
 async function cli($: EngineInterface, t: Dict, args: string[]): Promise<boolean> {
-  const res = await $.process.run([cliPath($), ...args], { timeoutMs: 10_000 })
+  const res = await $.process.run(['python3', 'bin/progress', ...args], { cwd: $.plugin.root, timeoutMs: 10_000 })
   if (res.exitCode !== 0) $.ui.toast(`progress: ${clean(res.stderr, 120) || t.exitedWith(res.exitCode)}`)
   await refresh($, t)
   return res.exitCode === 0
@@ -195,7 +199,7 @@ function actions($: EngineInterface, t: Dict): Actions {
     clear: () => cli($, t, ['clear']),
     goChat: async (d, surface) => {
       // el CLI sabe resolverlo (también fichas viejas, por la lista de chats de la app): abre o devuelve el resume
-      const res = await $.process.run([cliPath($), 'chat', d.id], { timeoutMs: 10_000 })
+      const res = await $.process.run(['python3', 'bin/progress', 'chat', d.id], { cwd: $.plugin.root, timeoutMs: 10_000 })
       const out = res.stdout.trim()
       if (res.exitCode !== 0) {
         $.ui.toast(`progress: ${clean(res.stderr, 120) || t.chatOpenFailed}`)

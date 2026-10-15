@@ -514,35 +514,11 @@ def mark_tokens(data, sid, cum, verb):
 
 
 # ── Volver al chat ────────────────────────────────────────────────────────────────────────────
-# La app de escritorio guarda cada chat en claude-code-sessions/<cuenta>/<org>/local_<id>.json con el
-# id de su sesión del motor (`cliSessionId`). Con eso, una ficha que solo sabe su dueña (fichas viejas)
-# también puede abrir su chat en la app.
+# El hook apunta en la ficha el último chat que la toca (`chat`: app de escritorio o terminal). Las
+# fichas sin ese dato vuelven a su dueña con `claude --resume`. No se leen datos de la app de Claude.
 
-# Solo existe en macOS; en Linux la carpeta no está y chat_target cae a `claude --resume <id>`.
-APP_SESSIONS = os.path.expanduser(
-    "~/Library/Application Support/Claude/claude-code-sessions" if sys.platform == "darwin"
-    else "~/.config/Claude/claude-code-sessions")
 DESKTOP_ID_RE = re.compile(r"local_[0-9a-f-]{36}")
 CLI_ID_RE = re.compile(r"[0-9a-f-]{36}")
-
-
-def desktop_chat_for(cli_id, root=None):
-    """El id de la app (`local_…`) del chat de escritorio cuya sesión del motor es cli_id; None si no hay."""
-    root = root or os.environ.get("CLAUDE_APP_SESSIONS_DIR") or APP_SESSIONS
-    if not CLI_ID_RE.fullmatch(cli_id or ""):
-        return None
-    for dirpath, _, names in os.walk(root):
-        for n in names:
-            if not (n.startswith("local_") and n.endswith(".json")):
-                continue
-            try:
-                with open(os.path.join(dirpath, n), encoding="utf-8") as f:
-                    d = json.load(f)
-            except (OSError, ValueError):
-                continue
-            if isinstance(d, dict) and d.get("cliSessionId") == cli_id and DESKTOP_ID_RE.fullmatch(str(d.get("sessionId"))):
-                return d["sessionId"]
-    return None
 
 
 def chat_target(data):
@@ -553,5 +529,4 @@ def chat_target(data):
     sid = c.get("id") if c.get("app") == "cli" else data.get("owner")
     if not CLI_ID_RE.fullmatch(str(sid or "")):
         return None
-    local = desktop_chat_for(sid)
-    return ("desktop", local) if local else ("cli", sid)
+    return "cli", sid
