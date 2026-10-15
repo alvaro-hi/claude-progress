@@ -12,6 +12,8 @@ See how far along Claude Code is in a long plan, without reading the transcript.
 
 You don't have to tell Claude to use it: the plugin teaches it when to open a card, close steps, accept subagent work and finish.
 
+**In the Claude desktop app**, Claude already keeps a task list under its last message. Progress Ring follows that list instead of asking Claude to keep a second one: a list of three or more steps opens a card, each step Claude completes closes there, and the card finishes with the turn. Claude uses the `progress` command only for what the list doesn't carry: iterations, accepting subagent work, cancelling or pausing, and a clearer title. In the terminal, nothing changes.
+
 ![The band opened: done steps, the current one with its agent, and what's next](docs/media/band-desktop-open.png)
 
 ![The /progress panel: plans in this chat, in other chats, and finished today](docs/media/panel-desktop.png)
@@ -57,7 +59,7 @@ The mod only reads cards: every write goes through the CLI. The hook never block
 - **Runs** two local Python scripts from the plugin's own folder, always as `python3 bin/progress_hook.py` and `python3 bin/progress`: the first on Claude Code's hook events (prompt sent, turn end, tool use, subagent start and stop, an Agent call about to run), and the second when you press Hide, Clear, Discreet mode or Go to chat. To open a chat, `progress chat` runs `open` (macOS) or `xdg-open` (Linux) with a `claude://` link.
 - **Reads** the cards in `~/.claude/progress`, the session's id and folder, the hook events' data (the transcript path included: the hook reads the transcript to add up the tokens spent per step) It reads no credentials and no data from the Claude app.
 - **Sends** nothing over the network. Everything stays in local JSON files under `~/.claude/progress`.
-- **Changes in Claude Code:** adds one section to the system prompt (when to track a plan and how), adds one context line with the active card's state to your prompts, registers `/progress`, draws the band, the panel and the milestone rows, and hides the result row of `progress` commands, which the milestone row already shows. It never allows, denies or asks for a permission.
+- **Changes in Claude Code:** adds one section to the system prompt (when to track a plan and how; in the desktop app, how the card follows the task list), adds one context line with the active card's state to your prompts and, when the task list opens a card, one line telling Claude its id, registers `/progress`, draws the band, the panel and the milestone rows, and hides the result row of `progress` commands, which the milestone row already shows. It never allows, denies or asks for a permission.
 
 ### Rules the cards follow
 

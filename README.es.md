@@ -12,6 +12,8 @@ Ve por dónde va Claude Code en un plan largo sin leerte la conversación. Cuand
 
 No hace falta decirle a Claude que lo use: el plugin le enseña cuándo abrir una ficha, cerrar pasos, aceptar el trabajo de los subagentes y terminar.
 
+**En la app de escritorio de Claude**, Claude ya lleva una lista de tareas bajo su último mensaje. Progress Ring sigue esa lista en lugar de pedirle a Claude que lleve otra: una lista de tres pasos o más abre una ficha, cada paso que Claude completa se cierra en ella y la ficha termina con el turno. Claude solo usa el comando `progress` para lo que la lista no lleva: iteraciones, aceptar el trabajo de los subagentes, cancelar o pausar, y un título más claro. En la terminal no cambia nada.
+
 ![La banda desplegada: pasos hechos, el actual con su agente y lo que viene](docs/media/band-desktop-open.png)
 
 ![El panel /progress: planes de este chat, de otros chats y terminados hoy](docs/media/panel-desktop.png)
@@ -57,7 +59,7 @@ El mod solo lee fichas: toda escritura pasa por el CLI. El hook nunca bloquea un
 - **Ejecuta** dos scripts locales de Python desde la carpeta del propio plugin, siempre como `python3 bin/progress_hook.py` y `python3 bin/progress`: el primero en los eventos de hooks de Claude Code (mensaje enviado, fin de turno, uso de herramientas, inicio y fin de subagentes, una llamada a Agent a punto de correr), y el segundo cuando pulsas Ocultar, Vaciar, Modo discreto o Ir al chat. Para abrir un chat, `progress chat` ejecuta `open` (macOS) o `xdg-open` (Linux) con un enlace `claude://`.
 - **Lee** las fichas de `~/.claude/progress`, el id y la carpeta de la sesión, los datos de los eventos de hooks (incluida la ruta de la transcripción: el hook la lee para sumar los tokens gastados por paso) No lee credenciales ni datos de la app de Claude.
 - **No envía nada** por la red. Todo se queda en archivos JSON locales en `~/.claude/progress`.
-- **Cambios en Claude Code:** añade una sección al system prompt (cuándo y cómo seguir un plan), añade a tus mensajes una línea de contexto con el estado de la ficha activa, registra `/progress`, dibuja la banda, el panel y las filas de hitos, y oculta la fila de resultado de los comandos `progress`, que ya enseña el hito. Nunca concede, deniega ni pide un permiso.
+- **Cambios en Claude Code:** añade una sección al system prompt (cuándo y cómo seguir un plan; en la app de escritorio, cómo sigue la ficha a la lista de tareas), añade a tus mensajes una línea de contexto con el estado de la ficha activa y, cuando la lista de tareas abre una ficha, una línea que le dice a Claude su id, registra `/progress`, dibuja la banda, el panel y las filas de hitos, y oculta la fila de resultado de los comandos `progress`, que ya enseña el hito. Nunca concede, deniega ni pide un permiso.
 
 ### Reglas que siguen las fichas
 
